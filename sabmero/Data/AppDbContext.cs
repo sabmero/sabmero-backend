@@ -30,7 +30,7 @@ public class AppDbContext : DbContext
     public DbSet<AppSetting> AppSettings { get; set; }
     public DbSet<VendorPayment> VendorPayments { get; set; }
     public DbSet<RepairService> RepairServices { get; set; }
-
+    public DbSet<ServiceCategory> ServiceCategories { get; set; }
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);

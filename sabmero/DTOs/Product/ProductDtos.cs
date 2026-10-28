@@ -15,6 +15,8 @@ public class CreateProductDto
     [Required]
     [Range(0.01, 10000000, ErrorMessage = "Price must be greater than 0")]
     public decimal Price { get; set; }
+    [Range(0.01, 10000000, ErrorMessage = "Old price must be greater than 0")]
+public decimal? OldPrice { get; set; }
 
     [Range(0, int.MaxValue, ErrorMessage = "Stock cannot be negative")]
     public int Stock { get; set; }
@@ -48,7 +50,9 @@ public class UpdateProductDto
 
     [Range(0.01, 10000000)]
     public decimal Price { get; set; }
-
+    
+[Range(0.01, 10000000)]
+public decimal? OldPrice { get; set; }
     [Range(0, int.MaxValue)]
     public int Stock { get; set; }
 
@@ -72,6 +76,16 @@ public class ProductDto
     public string Name { get; set; } = string.Empty;
     public string Description { get; set; } = string.Empty;
     public decimal Price { get; set; }
+    public decimal? OldPrice { get; set; }
+
+// Worked out from Price and OldPrice. 0 when there is no discount.
+public int DiscountPercent =>
+    OldPrice.HasValue && OldPrice.Value > Price
+        ? (int)Math.Round((OldPrice.Value - Price) / OldPrice.Value * 100m)
+        : 0;
+
+public decimal SavingsAmount =>
+    OldPrice.HasValue && OldPrice.Value > Price ? OldPrice.Value - Price : 0m;
     [Range(0.01, 10000000, ErrorMessage = "Old price must be greater than 0")]
 public decimal? OldPrice { get; set; }
     public int Stock { get; set; }

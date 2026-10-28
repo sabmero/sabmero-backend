@@ -31,6 +31,8 @@ public class AppDbContext : DbContext
     public DbSet<VendorPayment> VendorPayments { get; set; }
     public DbSet<RepairService> RepairServices { get; set; }
     public DbSet<ServiceCategory> ServiceCategories { get; set; }
+    public DbSet<ServicePackage> ServicePackages { get; set; }
+public DbSet<ServicePackageItem> ServicePackageItems { get; set; }
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);

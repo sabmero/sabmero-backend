@@ -32,12 +32,18 @@ public class AuthService : IAuthService
         if (phoneExists)
             return (false, "This phone number is already registered.", null);
 
+        // Email is required and is used for password reset, so it must be unique
+        var normalizedEmail = dto.Email.Trim().ToLower();
+        bool emailExists = await _db.Users.AnyAsync(u => u.Email != null && u.Email.ToLower() == normalizedEmail);
+        if (emailExists)
+            return (false, "This email is already registered.", null);
+
         // Create new User row
         var user = new User
         {
             FullName = dto.FullName.Trim(),
             Phone = dto.Phone.Trim(),
-            Email = dto.Email?.Trim(),
+            Email = dto.Email.Trim(),
             PasswordHash = BCrypt.Net.BCrypt.HashPassword(dto.Password),   // never store plain password
             Address = dto.Address.Trim(),
             Role = "Customer",   // server-assigned; see note above

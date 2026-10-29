@@ -28,3 +28,14 @@ public class FcmTokenDto
     [Required]
     public string Token { get; set; } = string.Empty;
 }
+
+// PUT /api/auth/notification-settings   (Settings screen toggles)
+// Send only the toggle(s) that changed; null = leave as is.
+public class NotificationSettingsDto
+{
+    // "Push Notifications" — order and repair updates
+    public bool? PushEnabled { get; set; }
+
+    // "Promotional Alerts" — deals and offers
+    public bool? PromoAlertsEnabled { get; set; }
+}

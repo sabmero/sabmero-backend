@@ -753,6 +753,12 @@ namespace sabmero.Migrations
                     b.Property<string>("ProfilePicturePath")
                         .HasColumnType("text");
 
+                    b.Property<bool>("PromoAlertsEnabled")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("PushEnabled")
+                        .HasColumnType("boolean");
+
                     b.Property<string>("Role")
                         .IsRequired()
                         .ValueGeneratedOnAdd()

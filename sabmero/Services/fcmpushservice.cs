@@ -1,6 +1,8 @@
 ﻿using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using Microsoft.EntityFrameworkCore;
+using sabmero.Data;
 
 namespace sabmero.Services;
 
@@ -28,22 +30,37 @@ public class FcmPushService : IPushService
     private readonly IHttpClientFactory _httpFactory;
     private readonly IConfiguration _config;
     private readonly ILogger<FcmPushService> _logger;
+    private readonly AppDbContext _db;
 
     // Cached OAuth token (valid ~1 hour).
     private static string? _cachedToken;
     private static DateTime _cachedTokenExpiry = DateTime.MinValue;
     private static readonly SemaphoreSlim _tokenLock = new(1, 1);
 
-    public FcmPushService(IHttpClientFactory httpFactory, IConfiguration config, ILogger<FcmPushService> logger)
+    public FcmPushService(IHttpClientFactory httpFactory, IConfiguration config, ILogger<FcmPushService> logger, AppDbContext db)
     {
         _httpFactory = httpFactory;
         _config = config;
         _logger = logger;
+        _db = db;
     }
 
     public async Task SendToTokenAsync(string? fcmToken, string title, string body, Dictionary<string, string>? data = null)
     {
         if (string.IsNullOrWhiteSpace(fcmToken)) return;
+
+        // Respect the "Push Notifications" switch on the Settings screen:
+        // if the user who owns this device token turned it off, send nothing.
+        try
+        {
+            if (await _db.Users.AsNoTracking().AnyAsync(u => u.FcmToken == fcmToken && !u.PushEnabled))
+                return;
+        }
+        catch (Exception ex)
+        {
+            // If the check itself fails, fall through and send (fail-open).
+            _logger.LogWarning(ex, "Could not check PushEnabled before sending push");
+        }
 
         var saPath = _config["Fcm:ServiceAccountPath"];
         if (string.IsNullOrWhiteSpace(saPath) || !File.Exists(saPath))

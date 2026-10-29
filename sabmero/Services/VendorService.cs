@@ -21,11 +21,13 @@ public class VendorService : IVendorService
 {
     private readonly AppDbContext _db;
     private readonly ILogger<VendorService> _logger;
+    private readonly IPushService _push;
 
-    public VendorService(AppDbContext db, ILogger<VendorService> logger)
+    public VendorService(AppDbContext db, ILogger<VendorService> logger, IPushService push)
     {
         _db = db;
         _logger = logger;
+        _push = push;
     }
 
     public async Task<(bool Success, string Message, VendorRequestDto? Data)> ApplyAsync(int userId, CreateVendorDto dto)
@@ -66,6 +68,8 @@ public class VendorService : IVendorService
         _db.VendorRequests.Add(request);
         await _db.SaveChangesAsync();
         _logger.LogInformation("Vendor request {Id} submitted by user {UserId}", request.Id, userId);
+
+        await NotifyAdminsNewVendorRequestAsync(request, user.FullName);
 
         return (true, "Vendor application submitted. Waiting for admin approval.",
             await GetRequestDtoAsync(request.Id));
@@ -113,6 +117,9 @@ public class VendorService : IVendorService
         await _db.SaveChangesAsync();
 
         _logger.LogInformation("Public vendor registration: user {UserId}, request {ReqId}", user.Id, request.Id);
+
+        await NotifyAdminsNewVendorRequestAsync(request, user.FullName);
+
         return (true, "Registration submitted. An admin will review your documents.",
             await GetRequestDtoAsync(request.Id));
     }
@@ -169,6 +176,11 @@ public class VendorService : IVendorService
             request.ReviewedAt = DateTime.UtcNow;
             await _db.SaveChangesAsync();
             _logger.LogInformation("Vendor request {Id} rejected", requestId);
+
+            await _push.SendToTokenAsync(user.FcmToken, "Vendor Request Rejected",
+                $"Your vendor request for '{request.BusinessName}' was rejected: {request.RejectionReason}",
+                new Dictionary<string, string> { ["type"] = "vendor_request", ["status"] = "Rejected", ["requestId"] = request.Id.ToString() });
+
             return (true, "Vendor request rejected.");
         }
 
@@ -205,7 +217,40 @@ public class VendorService : IVendorService
         await _db.SaveChangesAsync();
 
         _logger.LogInformation("Vendor request {Id} approved → vendor {VendorId}", requestId, vendor.Id);
+
+        await _push.SendToTokenAsync(user.FcmToken, "Vendor Request Approved 🎉",
+            $"Congratulations! '{request.BusinessName}' is now approved. You can start selling.",
+            new Dictionary<string, string> { ["type"] = "vendor_request", ["status"] = "Approved", ["requestId"] = request.Id.ToString() });
+
         return (true, "Vendor approved and profile created.");
+    }
+
+    // Tell every active admin that a new vendor request is waiting for review.
+    // A push problem must never fail the applicant's submission.
+    private async Task NotifyAdminsNewVendorRequestAsync(VendorRequest request, string applicantName)
+    {
+        try
+        {
+            var admins = await _db.Users
+                .Where(u => u.Role == "Admin" && u.IsActive && u.FcmToken != null && u.FcmToken != "")
+                .ToListAsync();
+
+            var data = new Dictionary<string, string>
+            {
+                ["type"] = "vendor_request_new",
+                ["requestId"] = request.Id.ToString()
+            };
+
+            foreach (var admin in admins.GroupBy(a => a.FcmToken).Select(g => g.First()))
+            {
+                await _push.SendToTokenAsync(admin.FcmToken, "New Vendor Request 🏪",
+                    $"{applicantName} applied to become a vendor ('{request.BusinessName}'). Tap to review.", data);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to notify admins about vendor request {Id}", request.Id);
+        }
     }
 
     public async Task<VendorDto?> GetByUserIdAsync(int userId)

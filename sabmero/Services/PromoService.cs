@@ -9,10 +9,14 @@ namespace sabmero.Services;
 public class PromoService : IPromoService
 {
     private readonly AppDbContext _db;
+    private readonly IServiceScopeFactory _scopeFactory;
+    private readonly ILogger<PromoService> _logger;
 
-    public PromoService(AppDbContext db)
+    public PromoService(AppDbContext db, IServiceScopeFactory scopeFactory, ILogger<PromoService> logger)
     {
         _db = db;
+        _scopeFactory = scopeFactory;
+        _logger = logger;
     }
 
     public async Task<List<PromoDto>> GetAllAsync()
@@ -47,7 +51,48 @@ public class PromoService : IPromoService
 
         _db.PromoCodes.Add(promo);
         await _db.SaveChangesAsync();
+
+        // Tell customers about the new offer ("Promotional Alerts" switch).
+        // Runs in the background so the admin's request returns immediately.
+        var (promoCode, percent, expires) = (promo.Code, promo.DiscountPercent, promo.ExpiresAt);
+        _ = Task.Run(() => BroadcastPromoAsync(promoCode, percent, expires));
+
         return (true, "Promo code created.", Map(promo));
+    }
+
+    // Push the new promo to every active customer who kept "Promotional Alerts"
+    // and "Push Notifications" switched on. Uses its own DI scope because the
+    // request's DbContext is gone by the time this runs.
+    private async Task BroadcastPromoAsync(string code, decimal discountPercent, DateTime expiresAt)
+    {
+        try
+        {
+            using var scope = _scopeFactory.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var push = scope.ServiceProvider.GetRequiredService<IPushService>();
+
+            var tokens = await db.Users
+                .AsNoTracking()
+                .Where(u => u.Role == "Customer" && u.IsActive
+                            && u.PushEnabled && u.PromoAlertsEnabled
+                            && u.FcmToken != null && u.FcmToken != "")
+                .Select(u => u.FcmToken!)
+                .Distinct()
+                .ToListAsync();
+
+            var title = "New Offer 🎉";
+            var body = $"Use code {code} to get {discountPercent:0.##}% off. Valid till {expiresAt:dd MMM yyyy}.";
+            var data = new Dictionary<string, string> { ["type"] = "promo", ["code"] = code };
+
+            foreach (var token in tokens)
+                await push.SendToTokenAsync(token, title, body, data);
+
+            _logger.LogInformation("Promo {Code} broadcast to {Count} customers", code, tokens.Count);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Promo broadcast failed for {Code}", code);
+        }
     }
 
     public async Task<(bool Success, string Message, PromoDto? Data)> UpdateAsync(int id, UpdatePromoDto dto)

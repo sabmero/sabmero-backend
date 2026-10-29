@@ -316,4 +316,35 @@ public class AuthService : IAuthService
         await _db.SaveChangesAsync();
         return (true, "Device token saved.");
     }
+
+    // ── NOTIFICATION SETTINGS (Settings screen toggles) ───────────────────────
+    public async Task<(bool Success, string Message, NotificationSettingsDto? Data)> GetNotificationSettingsAsync(int userId)
+    {
+        var user = await _db.Users.FindAsync(userId);
+        if (user == null)
+            return (false, "User not found.", null);
+
+        return (true, "OK", new NotificationSettingsDto
+        {
+            PushEnabled = user.PushEnabled,
+            PromoAlertsEnabled = user.PromoAlertsEnabled
+        });
+    }
+
+    public async Task<(bool Success, string Message, NotificationSettingsDto? Data)> SaveNotificationSettingsAsync(int userId, NotificationSettingsDto dto)
+    {
+        var user = await _db.Users.FindAsync(userId);
+        if (user == null)
+            return (false, "User not found.", null);
+
+        if (dto.PushEnabled.HasValue) user.PushEnabled = dto.PushEnabled.Value;
+        if (dto.PromoAlertsEnabled.HasValue) user.PromoAlertsEnabled = dto.PromoAlertsEnabled.Value;
+        await _db.SaveChangesAsync();
+
+        return (true, "Notification settings saved.", new NotificationSettingsDto
+        {
+            PushEnabled = user.PushEnabled,
+            PromoAlertsEnabled = user.PromoAlertsEnabled
+        });
+    }
 }

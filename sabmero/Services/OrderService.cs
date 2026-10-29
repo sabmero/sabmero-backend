@@ -172,6 +172,10 @@ public class OrderService : IOrderService
 
         _logger.LogInformation("Order {Id} placed by user {UserId}, total {Total}", order.Id, userId, total);
 
+        // Push: customer ("Order Placed"), each vendor whose product is in the
+        // order, and every admin ("New Order"). Never breaks the order flow.
+        await NotifyOrderPlacedAsync(order);
+
         var dtoResult = await BuildOrderDtoAsync(order.Id);
         return (true, dto.BookInstallation
             ? "Order placed and installation booked successfully."
@@ -294,7 +298,7 @@ public class OrderService : IOrderService
         {
             var (title, msg) = status switch
             {
-                "Processing" => ("Order Confirmed 🛒", $"Your order #{order.Id} is being processed."),
+                "Processing" => ("Order Accepted ✅", $"Your order #{order.Id} has been accepted and is being processed."),
                 "Dispatched" => ("Order Dispatched 🚚", $"Your order #{order.Id} is on the way!"),
                 "Delivered" => ("Order Delivered 📦", $"Your order #{order.Id} has been delivered. Enjoy!"),
                 "Cancelled" => ("Order Cancelled", $"Your order #{order.Id} has been cancelled."),
@@ -303,6 +307,10 @@ public class OrderService : IOrderService
             await _push.SendToTokenAsync(customer.FcmToken, title, msg,
                 new Dictionary<string, string> { ["type"] = "order", ["orderId"] = order.Id.ToString(), ["status"] = status });
         }
+
+        // Also tell the admin(s) and the vendor(s) of this order (except the
+        // person who just made the change) — e.g. vendor accepts → admin is told.
+        await NotifyStaffStatusChangeAsync(order.Id, status, actorUserId, actorRole);
 
         return (true, $"Order status updated to {status}.");
     }
@@ -367,7 +375,106 @@ public class OrderService : IOrderService
 
         order.Status = "Cancelled";
         await _db.SaveChangesAsync();
+
+        // Let the vendor(s) and admin(s) know the customer cancelled.
+        await NotifyStaffStatusChangeAsync(order.Id, "Cancelled", userId, "Customer");
+
         return (true, "Order cancelled.");
+    }
+
+    // ── Push notification helpers ────────────────────────────────────────────
+    // Users to alert about an order: all active admins + the owner (User) of
+    // every vendor whose product is in the order. Optionally skips one user
+    // (the person who triggered the action). Only users with an FCM token.
+    private async Task<List<User>> GetOrderStaffAsync(int orderId, int? excludeUserId = null)
+    {
+        var vendorUserIds = await _db.Orders
+            .Where(o => o.Id == orderId)
+            .SelectMany(o => o.OrderItems)
+            .Select(oi => oi.Product.Vendor.UserId)
+            .Distinct()
+            .ToListAsync();
+
+        return await _db.Users
+            .Where(u => u.IsActive
+                        && u.FcmToken != null && u.FcmToken != ""
+                        && (u.Role == "Admin" || vendorUserIds.Contains(u.Id))
+                        && (excludeUserId == null || u.Id != excludeUserId))
+            .ToListAsync();
+    }
+
+    private async Task NotifyOrderPlacedAsync(Order order)
+    {
+        try
+        {
+            var data = new Dictionary<string, string>
+            {
+                ["type"] = "order_new",
+                ["orderId"] = order.Id.ToString()
+            };
+
+            var customer = await _db.Users.FindAsync(order.UserId);
+            var sentTokens = new HashSet<string>();
+
+            // Customer
+            if (customer != null && !string.IsNullOrWhiteSpace(customer.FcmToken))
+            {
+                sentTokens.Add(customer.FcmToken!);
+                await _push.SendToTokenAsync(customer.FcmToken, "Order Placed 🛍️",
+                    $"Your order #{order.Id} has been placed. We'll notify you once it's accepted.", data);
+            }
+
+            // Vendors + admins
+            var itemCount = order.OrderItems.Sum(i => i.Quantity);
+            var who = customer?.FullName is { Length: > 0 } n ? n : "a customer";
+            foreach (var u in await GetOrderStaffAsync(order.Id, order.UserId))
+            {
+                if (!sentTokens.Add(u.FcmToken!)) continue;   // don't push twice to one device
+
+                var (title, body) = u.Role == "Admin"
+                    ? ("New Order 🛒", $"Order #{order.Id} placed by {who} — Rs. {order.TotalAmount:0.##}.")
+                    : ("New Order Received 🛒", $"Order #{order.Id} from {who} ({itemCount} item(s)). Please accept it.");
+                await _push.SendToTokenAsync(u.FcmToken, title, body, data);
+            }
+        }
+        catch (Exception ex)
+        {
+            // A notification problem must never fail the customer's order.
+            _logger.LogError(ex, "Failed to send order-placed notifications for order {Id}", order.Id);
+        }
+    }
+
+    private async Task NotifyStaffStatusChangeAsync(int orderId, string status, int actorUserId, string actorRole)
+    {
+        try
+        {
+            var data = new Dictionary<string, string>
+            {
+                ["type"] = "order_status",
+                ["orderId"] = orderId.ToString(),
+                ["status"] = status
+            };
+
+            var (title, body) = status switch
+            {
+                "Processing" => ("Order Accepted ✅", $"Order #{orderId} has been accepted ({actorRole})."),
+                "Dispatched" => ("Order Dispatched 🚚", $"Order #{orderId} has been dispatched."),
+                "Delivered" => ("Order Delivered 📦", $"Order #{orderId} has been delivered."),
+                "Cancelled" => ("Order Cancelled", $"Order #{orderId} was cancelled ({actorRole})."),
+                _ => ("Order Update", $"Order #{orderId} is now '{status}'.")
+            };
+
+            var sentTokens = new HashSet<string>();
+            foreach (var u in await GetOrderStaffAsync(orderId, actorUserId))
+            {
+                if (!sentTokens.Add(u.FcmToken!)) continue;
+                await _push.SendToTokenAsync(u.FcmToken, title, body, data);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to send staff notifications for order {Id}", orderId);
+        }
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────

@@ -28,12 +28,17 @@ public class RepairServiceCatalog : IRepairServiceCatalog
         if (string.IsNullOrWhiteSpace(dto.Name))
             return (false, "Service name is required.", null);
 
+        if (dto.CategoryId.HasValue
+            && !await _db.ServiceCategories.AnyAsync(c => c.Id == dto.CategoryId.Value))
+            return (false, "Category not found.", null);
+
         var svc = new RepairService
         {
             Name = dto.Name.Trim(),
             Description = string.IsNullOrWhiteSpace(dto.Description) ? null : dto.Description.Trim(),
             Charge = dto.Charge < 0 ? 0 : dto.Charge,
             ImagePath = dto.ImagePath,
+            CategoryId = dto.CategoryId,
             IsActive = true,
             CreatedAt = DateTime.UtcNow
         };
@@ -48,11 +53,20 @@ public class RepairServiceCatalog : IRepairServiceCatalog
         var svc = await _db.RepairServices.FindAsync(id);
         if (svc == null) return (false, "Service not found.");
 
+        if (dto.CategoryId.HasValue
+            && !await _db.ServiceCategories.AnyAsync(c => c.Id == dto.CategoryId.Value))
+            return (false, "Category not found.");
+
         svc.Name = dto.Name.Trim();
         svc.Description = string.IsNullOrWhiteSpace(dto.Description) ? null : dto.Description.Trim();
         svc.Charge = dto.Charge < 0 ? 0 : dto.Charge;
         svc.ImagePath = dto.ImagePath;
         svc.IsActive = dto.IsActive;
+
+        // only change the category when one is sent, so older clients keep it
+        if (dto.CategoryId.HasValue)
+            svc.CategoryId = dto.CategoryId;
+
         await _db.SaveChangesAsync();
         return (true, "Service updated.");
     }
@@ -73,6 +87,7 @@ public class RepairServiceCatalog : IRepairServiceCatalog
         Description = r.Description,
         Charge = r.Charge,
         ImagePath = r.ImagePath,
-        IsActive = r.IsActive
+        IsActive = r.IsActive,
+        CategoryId = r.CategoryId
     };
 }

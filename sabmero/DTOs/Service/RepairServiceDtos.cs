@@ -11,6 +11,7 @@ public class RepairServiceDto
     public decimal Charge { get; set; }
     public string? ImagePath { get; set; }
     public bool IsActive { get; set; }
+    public int? CategoryId { get; set; }
 }
 
 // Admin SENDS this to create a service. Upload the image first via
@@ -29,6 +30,9 @@ public class CreateRepairServiceDto
 
     [MaxLength(400)]
     public string? ImagePath { get; set; }
+
+    // Optional: a service category (see /api/ServiceCategories).
+    public int? CategoryId { get; set; }
 }
 
 // Admin SENDS this to update a service.
@@ -48,4 +52,7 @@ public class UpdateRepairServiceDto
     public string? ImagePath { get; set; }
 
     public bool IsActive { get; set; } = true;
+
+    // Optional. Leave it out to keep the current category.
+    public int? CategoryId { get; set; }
 }

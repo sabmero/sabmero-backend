@@ -195,4 +195,27 @@ public class AuthController : ControllerBase
         if (!success) return BadRequest(new { success = false, message });
         return Ok(new { success = true, message });
     }
+
+    // ── GET /api/auth/notification-settings ───────────────────────────────────
+    // → { pushEnabled, promoAlertsEnabled } for the Settings screen toggles.
+    [Authorize]
+    [HttpGet("notification-settings")]
+    public async Task<IActionResult> GetNotificationSettings()
+    {
+        var (success, message, data) = await _auth.GetNotificationSettingsAsync(User.GetUserId());
+        if (!success) return BadRequest(new { success = false, message });
+        return Ok(new { success = true, data });
+    }
+
+    // ── PUT /api/auth/notification-settings ───────────────────────────────────
+    // Body: { "pushEnabled": true/false, "promoAlertsEnabled": true/false }
+    // Send only what changed. The app calls this when a Settings toggle is flipped.
+    [Authorize]
+    [HttpPut("notification-settings")]
+    public async Task<IActionResult> SaveNotificationSettings([FromBody] NotificationSettingsDto dto)
+    {
+        var (success, message, data) = await _auth.SaveNotificationSettingsAsync(User.GetUserId(), dto);
+        if (!success) return BadRequest(new { success = false, message });
+        return Ok(new { success = true, message, data });
+    }
 }

@@ -37,6 +37,12 @@ public class User
     // Latest FCM device token for push notifications (FCM HTTP v1).
     public string? FcmToken { get; set; }
 
+    // Settings screen toggles (both default ON).
+    //   PushEnabled        → "Push Notifications" (order & repair updates, vendor requests…)
+    //   PromoAlertsEnabled → "Promotional Alerts" (deals and offers)
+    public bool PushEnabled { get; set; } = true;
+    public bool PromoAlertsEnabled { get; set; } = true;
+
     public bool IsActive { get; set; } = true;
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 

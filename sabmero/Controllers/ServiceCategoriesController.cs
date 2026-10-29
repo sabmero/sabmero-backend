@@ -26,6 +26,9 @@ public class ServiceCategoriesController : ControllerBase
     }
 
     // Any logged-in user sees active categories. Only an admin may include inactive ones.
+        [AllowAnonymous]
+    [HttpGet]
+    public async Task<IActionResult> List([FromQuery] bool includeInactive = false)
     [HttpGet]
     public async Task<IActionResult> List([FromQuery] bool includeInactive = false)
     {

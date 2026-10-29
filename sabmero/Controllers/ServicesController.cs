@@ -25,10 +25,8 @@ public class ServicesController : ControllerBase
         _catalog = catalog;
     }
 
-    // Any logged-in user sees active services. Only an admin may include inactive.
-        [AllowAnonymous]
-    [HttpGet]
-    public async Task<IActionResult> List([FromQuery] bool includeInactive = false)
+    // Anyone can see active services. Only an admin may include inactive.
+    [AllowAnonymous]
     [HttpGet]
     public async Task<IActionResult> List([FromQuery] bool includeInactive = false)
     {

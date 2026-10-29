@@ -26,14 +26,8 @@ public class ServicePackagesController : ControllerBase
         _packages = packages;
     }
 
-    // Any logged-in user sees Active packages. Only an admin can see other statuses.
-        [AllowAnonymous]
-    [HttpGet]
-    public async Task<IActionResult> List(...)
-
+    // Anyone can see Active packages. Only an admin can see other statuses.
     [AllowAnonymous]
-    [HttpGet("{id:int}")]
-    public async Task<IActionResult> Get(int id)
     [HttpGet]
     public async Task<IActionResult> List([FromQuery] int? categoryId, [FromQuery] string? status)
     {
@@ -41,13 +35,8 @@ public class ServicePackagesController : ControllerBase
         var data = await _packages.ListAsync(categoryId, status, isAdmin);
         return Ok(new { success = true, data });
     }
-    [AllowAnonymous]
-    [HttpGet]
-    public async Task<IActionResult> List(...)
 
     [AllowAnonymous]
-    [HttpGet("{id:int}")]
-    public async Task<IActionResult> Get(int id)
     [HttpGet("{id:int}")]
     public async Task<IActionResult> Get(int id)
     {

@@ -129,8 +129,10 @@ public class ServiceCategoryService : IServiceCategoryService
         if (hasChildren)
             return (false, "Delete or move its sub-categories first, or deactivate it instead.");
 
-        // TODO: also block deleting when repair services use this category
-        // (after RepairService.CategoryId is added).
+        var inUse = await _db.ServicePackages.AnyAsync(p => p.CategoryId == id)
+            || await _db.RepairServices.AnyAsync(s => s.CategoryId == id);
+        if (inUse)
+            return (false, "This category still has packages or services. Move them first, or deactivate the category instead.");
 
         _db.ServiceCategories.Remove(category);
         await _db.SaveChangesAsync();

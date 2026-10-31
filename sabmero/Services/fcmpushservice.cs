@@ -79,6 +79,11 @@ public class FcmPushService : IPushService
                     }
                 }
 
+                // A payment push carries bookingId for repair bookings → keep them apart
+                // from order payments so the app opens the right screen.
+                if (type == "payment" && data != null && data.ContainsKey("bookingId"))
+                    type = "payment_booking";
+
                 foreach (var o in owners)
                 {
                     db.Notifications.Add(new AppNotification

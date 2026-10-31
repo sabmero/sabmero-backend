@@ -14,6 +14,7 @@ public interface IAuthService
     Task<(bool Success, string Message)> ResetPasswordAsync(ResetPasswordDto dto);
     Task<(bool Success, string Message, UserProfileDto? Data)> UpdateProfileAsync(int userId, string? fullName, string? email, Microsoft.AspNetCore.Http.IFormFile? profilePicture);
     Task<(bool Success, string Message)> SaveFcmTokenAsync(int userId, string token);
+    Task ClearFcmTokenAsync(int userId);
     Task<(bool Success, string Message, NotificationSettingsDto? Data)> GetNotificationSettingsAsync(int userId);
     Task<(bool Success, string Message, NotificationSettingsDto? Data)> SaveNotificationSettingsAsync(int userId, NotificationSettingsDto dto);
 }

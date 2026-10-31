@@ -12,6 +12,9 @@ public interface IPushService
     // Sends a push notification to a single device token. Silently no-ops when
     // FCM isn't configured or the token is empty, so callers never need guards.
     Task SendToTokenAsync(string? fcmToken, string title, string body, Dictionary<string, string>? data = null);
+
+    // Notify one user: saved to THEIR Alerts history + pushed to THEIR device.
+    Task SendToUserAsync(int userId, string title, string body, Dictionary<string, string>? data = null);
 }
 
 // FCM HTTP v1 implementation.
@@ -46,68 +49,70 @@ public class FcmPushService : IPushService
         _scopeFactory = scopeFactory;
     }
 
-    public async Task SendToTokenAsync(string? fcmToken, string title, string body, Dictionary<string, string>? data = null)
+    // Notify ONE specific user: saves the notification to THAT user's Alerts
+    // history, then pushes to that user's own device (if their Push switch is on).
+    // This is what keeps technician jobs away from riders and vice-versa.
+    public async Task SendToUserAsync(int userId, string title, string body, Dictionary<string, string>? data = null)
     {
-        if (string.IsNullOrWhiteSpace(fcmToken)) return;
-
-        // 1) Save this notification to the user's Alerts-tab history (always, even
-        //    if their Push switch is off).
-        // 2) Respect the "Push Notifications" switch on the Settings screen: if the
-        //    owner of this device token turned it off, send no push.
-        // Uses its own DI scope so it never touches the caller's DbContext.
+        string? token = null;
         var pushAllowed = true;
         try
         {
             using var scope = _scopeFactory.CreateScope();
             var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
-            var owners = await db.Users.AsNoTracking()
-                .Where(u => u.FcmToken == fcmToken)
-                .Select(u => new { u.Id, u.PushEnabled })
-                .ToListAsync();
+            var u = await db.Users.AsNoTracking()
+                .Where(x => x.Id == userId)
+                .Select(x => new { x.FcmToken, x.PushEnabled })
+                .FirstOrDefaultAsync();
+            if (u == null) return;
 
-            if (owners.Count > 0)
+            var (type, reference) = Describe(data);
+            db.Notifications.Add(new AppNotification
             {
-                var type = "system";
-                string? reference = null;
-                if (data != null)
-                {
-                    if (data.TryGetValue("type", out var t) && !string.IsNullOrWhiteSpace(t)) type = t;
-                    foreach (var key in new[] { "orderId", "bookingId", "paymentId", "requestId", "code" })
-                    {
-                        if (data.TryGetValue(key, out var v) && !string.IsNullOrWhiteSpace(v)) { reference = v; break; }
-                    }
-                }
+                UserId = userId,
+                Title = Trunc(title, 150),
+                Body = Trunc(body, 500),
+                Type = Trunc(type, 40),
+                ReferenceId = reference == null ? null : Trunc(reference, 50),
+                IsRead = false,
+                CreatedAt = DateTime.UtcNow
+            });
+            await db.SaveChangesAsync();
 
-                // A payment push carries bookingId for repair bookings → keep them apart
-                // from order payments so the app opens the right screen.
-                if (type == "payment" && data != null && data.ContainsKey("bookingId"))
-                    type = "payment_booking";
-
-                foreach (var o in owners)
-                {
-                    db.Notifications.Add(new AppNotification
-                    {
-                        UserId = o.Id,
-                        Title = Trunc(title, 150),
-                        Body = Trunc(body, 500),
-                        Type = Trunc(type, 40),
-                        ReferenceId = reference == null ? null : Trunc(reference, 50),
-                        IsRead = false,
-                        CreatedAt = DateTime.UtcNow
-                    });
-                }
-                await db.SaveChangesAsync();
-
-                pushAllowed = owners.Any(o => o.PushEnabled);
-            }
+            token = u.FcmToken;
+            pushAllowed = u.PushEnabled;
         }
         catch (Exception ex)
         {
-            // History/switch problems must never block the push itself.
-            _logger.LogWarning(ex, "Could not save notification history / check PushEnabled");
+            _logger.LogWarning(ex, "Could not save notification history for user {UserId}", userId);
         }
-        if (!pushAllowed) return;
+
+        if (pushAllowed && !string.IsNullOrWhiteSpace(token))
+            await SendToTokenAsync(token, title, body, data);
+    }
+
+    private static (string Type, string? Reference) Describe(Dictionary<string, string>? data)
+    {
+        var type = "system";
+        string? reference = null;
+        if (data != null)
+        {
+            if (data.TryGetValue("type", out var t) && !string.IsNullOrWhiteSpace(t)) type = t;
+            foreach (var key in new[] { "orderId", "bookingId", "paymentId", "requestId", "code" })
+            {
+                if (data.TryGetValue(key, out var v) && !string.IsNullOrWhiteSpace(v)) { reference = v; break; }
+            }
+            // A payment push carrying bookingId is a repair-booking payment.
+            if (type == "payment" && data.ContainsKey("bookingId")) type = "payment_booking";
+        }
+        return (type, reference);
+    }
+
+    // Push only (no history). Prefer SendToUserAsync.
+    public async Task SendToTokenAsync(string? fcmToken, string title, string body, Dictionary<string, string>? data = null)
+    {
+        if (string.IsNullOrWhiteSpace(fcmToken)) return;
 
         var saPath = _config["Fcm:ServiceAccountPath"];
         if (string.IsNullOrWhiteSpace(saPath) || !File.Exists(saPath))
@@ -147,6 +152,12 @@ public class FcmPushService : IPushService
             {
                 var err = await resp.Content.ReadAsStringAsync();
                 _logger.LogError("FCM send failed ({Status}): {Error}", resp.StatusCode, err);
+
+                // Dead/old device token → forget it so we stop pushing into the void
+                // (the app registers a fresh one at the next login).
+                if (resp.StatusCode == System.Net.HttpStatusCode.NotFound
+                    || err.Contains("UNREGISTERED") || err.Contains("INVALID_ARGUMENT"))
+                    await ClearDeadTokenAsync(fcmToken);
             }
             else
             {
@@ -157,6 +168,22 @@ public class FcmPushService : IPushService
         {
             // Push failures must never break the main request flow.
             _logger.LogError(ex, "FCM push error");
+        }
+    }
+
+    private async Task ClearDeadTokenAsync(string token)
+    {
+        try
+        {
+            using var scope = _scopeFactory.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var users = await db.Users.Where(u => u.FcmToken == token).ToListAsync();
+            foreach (var u in users) u.FcmToken = null;
+            if (users.Count > 0) await db.SaveChangesAsync();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Could not clear dead FCM token");
         }
     }
 

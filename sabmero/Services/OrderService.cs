@@ -304,7 +304,7 @@ public class OrderService : IOrderService
                 "Cancelled" => ("Order Cancelled", $"Your order #{order.Id} has been cancelled."),
                 _ => ("Order Update", $"Your order #{order.Id} is now '{status}'.")
             };
-            await _push.SendToTokenAsync(customer.FcmToken, title, msg,
+            await _push.SendToUserAsync(customer.Id, title, msg,
                 new Dictionary<string, string> { ["type"] = "order", ["orderId"] = order.Id.ToString(), ["status"] = status });
         }
 
@@ -339,7 +339,7 @@ public class OrderService : IOrderService
         await _db.SaveChangesAsync();
 
         // Notify the rider they've been assigned a new delivery.
-        await _push.SendToTokenAsync(rider.FcmToken, "New Delivery Assigned 🛵",
+        await _push.SendToUserAsync(rider.Id, "New Delivery Assigned 🛵",
             $"You've been assigned order #{order.Id} for delivery to {order.DeliveryAddress}.",
             new Dictionary<string, string> { ["type"] = "order_assigned", ["orderId"] = order.Id.ToString() });
 
@@ -397,7 +397,6 @@ public class OrderService : IOrderService
 
         return await _db.Users
             .Where(u => u.IsActive
-                        && u.FcmToken != null && u.FcmToken != ""
                         && (u.Role == "Admin" || vendorUserIds.Contains(u.Id))
                         && (excludeUserId == null || u.Id != excludeUserId))
             .ToListAsync();
@@ -414,13 +413,13 @@ public class OrderService : IOrderService
             };
 
             var customer = await _db.Users.FindAsync(order.UserId);
-            var sentTokens = new HashSet<string>();
+            var sentUsers = new HashSet<int>();
 
             // Customer
-            if (customer != null && !string.IsNullOrWhiteSpace(customer.FcmToken))
+            if (customer != null)
             {
-                sentTokens.Add(customer.FcmToken!);
-                await _push.SendToTokenAsync(customer.FcmToken, "Order Placed 🛍️",
+                sentUsers.Add(customer.Id);
+                await _push.SendToUserAsync(customer.Id, "Order Placed 🛍️",
                     $"Your order #{order.Id} has been placed. We'll notify you once it's accepted.", data);
             }
 
@@ -429,12 +428,12 @@ public class OrderService : IOrderService
             var who = customer?.FullName is { Length: > 0 } n ? n : "a customer";
             foreach (var u in await GetOrderStaffAsync(order.Id, order.UserId))
             {
-                if (!sentTokens.Add(u.FcmToken!)) continue;   // don't push twice to one device
+                if (!sentUsers.Add(u.Id)) continue;
 
                 var (title, body) = u.Role == "Admin"
                     ? ("New Order 🛒", $"Order #{order.Id} placed by {who} — Rs. {order.TotalAmount:0.##}.")
                     : ("New Order Received 🛒", $"Order #{order.Id} from {who} ({itemCount} item(s)). Please accept it.");
-                await _push.SendToTokenAsync(u.FcmToken, title, body, data);
+                await _push.SendToUserAsync(u.Id, title, body, data);
             }
         }
         catch (Exception ex)
@@ -464,11 +463,11 @@ public class OrderService : IOrderService
                 _ => ("Order Update", $"Order #{orderId} is now '{status}'.")
             };
 
-            var sentTokens = new HashSet<string>();
+            var sentUsers = new HashSet<int>();
             foreach (var u in await GetOrderStaffAsync(orderId, actorUserId))
             {
-                if (!sentTokens.Add(u.FcmToken!)) continue;
-                await _push.SendToTokenAsync(u.FcmToken, title, body, data);
+                if (!sentUsers.Add(u.Id)) continue;
+                await _push.SendToUserAsync(u.Id, title, body, data);
             }
         }
         catch (Exception ex)

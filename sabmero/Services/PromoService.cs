@@ -71,23 +71,20 @@ public class PromoService : IPromoService
             var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
             var push = scope.ServiceProvider.GetRequiredService<IPushService>();
 
-            var tokens = await db.Users
+            var userIds = await db.Users
                 .AsNoTracking()
-                .Where(u => u.Role == "Customer" && u.IsActive
-                            && u.PushEnabled && u.PromoAlertsEnabled
-                            && u.FcmToken != null && u.FcmToken != "")
-                .Select(u => u.FcmToken!)
-                .Distinct()
+                .Where(u => u.Role == "Customer" && u.IsActive && u.PromoAlertsEnabled)
+                .Select(u => u.Id)
                 .ToListAsync();
 
             var title = "New Offer 🎉";
             var body = $"Use code {code} to get {discountPercent:0.##}% off. Valid till {expiresAt:dd MMM yyyy}.";
             var data = new Dictionary<string, string> { ["type"] = "promo", ["code"] = code };
 
-            foreach (var token in tokens)
-                await push.SendToTokenAsync(token, title, body, data);
+            foreach (var id in userIds)
+                await push.SendToUserAsync(id, title, body, data);
 
-            _logger.LogInformation("Promo {Code} broadcast to {Count} customers", code, tokens.Count);
+            _logger.LogInformation("Promo {Code} broadcast to {Count} customers", code, userIds.Count);
         }
         catch (Exception ex)
         {

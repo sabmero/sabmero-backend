@@ -305,6 +305,15 @@ public class AuthService : IAuthService
         });
     }
 
+    // ── CLEAR FCM TOKEN (logout) ──────────────────────────────────────────────
+    public async Task ClearFcmTokenAsync(int userId)
+    {
+        var user = await _db.Users.FindAsync(userId);
+        if (user == null) return;
+        user.FcmToken = null;
+        await _db.SaveChangesAsync();
+    }
+
     // ── SAVE FCM TOKEN ────────────────────────────────────────────────────────
     public async Task<(bool Success, string Message)> SaveFcmTokenAsync(int userId, string token)
     {

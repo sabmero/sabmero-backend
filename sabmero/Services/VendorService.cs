@@ -177,7 +177,7 @@ public class VendorService : IVendorService
             await _db.SaveChangesAsync();
             _logger.LogInformation("Vendor request {Id} rejected", requestId);
 
-            await _push.SendToTokenAsync(user.FcmToken, "Vendor Request Rejected",
+            await _push.SendToUserAsync(user.Id, "Vendor Request Rejected",
                 $"Your vendor request for '{request.BusinessName}' was rejected: {request.RejectionReason}",
                 new Dictionary<string, string> { ["type"] = "vendor_request", ["status"] = "Rejected", ["requestId"] = request.Id.ToString() });
 
@@ -218,7 +218,7 @@ public class VendorService : IVendorService
 
         _logger.LogInformation("Vendor request {Id} approved → vendor {VendorId}", requestId, vendor.Id);
 
-        await _push.SendToTokenAsync(user.FcmToken, "Vendor Request Approved 🎉",
+        await _push.SendToUserAsync(user.Id, "Vendor Request Approved 🎉",
             $"Congratulations! '{request.BusinessName}' is now approved. You can start selling.",
             new Dictionary<string, string> { ["type"] = "vendor_request", ["status"] = "Approved", ["requestId"] = request.Id.ToString() });
 
@@ -232,7 +232,7 @@ public class VendorService : IVendorService
         try
         {
             var admins = await _db.Users
-                .Where(u => u.Role == "Admin" && u.IsActive && u.FcmToken != null && u.FcmToken != "")
+                .Where(u => u.Role == "Admin" && u.IsActive)
                 .ToListAsync();
 
             var data = new Dictionary<string, string>
@@ -241,9 +241,9 @@ public class VendorService : IVendorService
                 ["requestId"] = request.Id.ToString()
             };
 
-            foreach (var admin in admins.GroupBy(a => a.FcmToken).Select(g => g.First()))
+            foreach (var admin in admins)
             {
-                await _push.SendToTokenAsync(admin.FcmToken, "New Vendor Request 🏪",
+                await _push.SendToUserAsync(admin.Id, "New Vendor Request 🏪",
                     $"{applicantName} applied to become a vendor ('{request.BusinessName}'). Tap to review.", data);
             }
         }

@@ -150,8 +150,8 @@ public class VendorPaymentService : IVendorPaymentService
             adminUserId, payment.Id, payment.Amount, vendor.Id);
 
         // Notify the vendor by push.
-        await _push.SendToTokenAsync(
-            vendor.User.FcmToken,
+        await _push.SendToUserAsync(
+            vendor.UserId,
             "Payment Received 💰",
             $"You have been paid Rs {payment.Amount:0} by SabMero. Open the app to confirm receipt.",
             new Dictionary<string, string> { ["type"] = "vendorPayment", ["paymentId"] = payment.Id.ToString() });

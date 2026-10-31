@@ -134,7 +134,7 @@ public class PaymentService : IPaymentService
                 var (title, body) = dto.Approve
                     ? ("Payment Verified ✅", $"Your payment for order #{order.Id} has been verified. Your order will be processed soon.")
                     : ("Payment Rejected ❌", $"Your payment for order #{order.Id} could not be verified. Please re-submit a valid screenshot.");
-                await _push.SendToTokenAsync(customer.FcmToken, title, body,
+                await _push.SendToUserAsync(customer.Id, title, body,
                     new Dictionary<string, string> { ["type"] = "payment", ["orderId"] = order.Id.ToString() });
             }
             return (true, dto.Approve ? "Payment verified." : "Payment rejected.");
@@ -161,7 +161,7 @@ public class PaymentService : IPaymentService
                 var (title, body) = dto.Approve
                     ? ("Payment Verified ✅", $"Your payment for booking #{booking.Id} has been verified.")
                     : ("Payment Rejected ❌", $"Your payment for booking #{booking.Id} could not be verified. Please re-submit.");
-                await _push.SendToTokenAsync(bkCustomer.FcmToken, title, body,
+                await _push.SendToUserAsync(bkCustomer.Id, title, body,
                     new Dictionary<string, string> { ["type"] = "payment", ["bookingId"] = booking.Id.ToString() });
             }
             return (true, dto.Approve ? "Payment verified." : "Payment rejected.");

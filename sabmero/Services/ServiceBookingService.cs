@@ -141,7 +141,7 @@ public class ServiceBookingService : IServiceBookingService
         await _db.SaveChangesAsync();
 
         // Notify the technician they've been assigned a new job.
-        await _push.SendToTokenAsync(tech.FcmToken, "New Job Assigned 🔧",
+        await _push.SendToUserAsync(tech.Id, "New Job Assigned 🔧",
             $"You've been assigned a {booking.ServiceType} job (#{booking.Id}) at {booking.ServiceAddress}.",
             new Dictionary<string, string> { ["type"] = "booking_assigned", ["bookingId"] = booking.Id.ToString() });
 
@@ -198,7 +198,7 @@ public class ServiceBookingService : IServiceBookingService
                 "Completed" => ("Service Completed 🎉", $"Your {booking.ServiceType} booking #{booking.Id} is completed. Please leave a review!"),
                 _ => ("Booking Update", $"Your booking #{booking.Id} is now '{dto.Status}'.")
             };
-            await _push.SendToTokenAsync(customer.FcmToken, title, msg,
+            await _push.SendToUserAsync(customer.Id, title, msg,
                 new Dictionary<string, string> { ["type"] = "booking", ["bookingId"] = booking.Id.ToString(), ["status"] = dto.Status });
         }
 

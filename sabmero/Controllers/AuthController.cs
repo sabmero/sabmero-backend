@@ -196,6 +196,16 @@ public class AuthController : ControllerBase
         return Ok(new { success = true, message });
     }
 
+    // ── DELETE /api/auth/fcm-token ────────────────────────────────────────────
+    // Called on logout so this phone stops receiving the old account's pushes.
+    [Authorize]
+    [HttpDelete("fcm-token")]
+    public async Task<IActionResult> ClearFcmToken()
+    {
+        await _auth.ClearFcmTokenAsync(User.GetUserId());
+        return Ok(new { success = true, message = "Device token cleared." });
+    }
+
     // ── GET /api/auth/notification-settings ───────────────────────────────────
     // → { pushEnabled, promoAlertsEnabled } for the Settings screen toggles.
     [Authorize]

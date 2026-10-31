@@ -49,6 +49,15 @@ public class NotificationsController : ControllerBase
         return Ok(new { success = true, data });
     }
 
+    // Number of unread notifications — for the bell badge in the web panels.
+    [HttpGet("unread-count")]
+    public async Task<IActionResult> UnreadCount()
+    {
+        var userId = User.GetUserId();
+        var count = await _db.Notifications.CountAsync(n => n.UserId == userId && !n.IsRead);
+        return Ok(new { success = true, data = new { count } });
+    }
+
     [HttpPost("{id:int}/read")]
     public async Task<IActionResult> MarkRead(int id)
     {

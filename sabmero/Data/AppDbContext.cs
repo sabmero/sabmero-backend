@@ -33,6 +33,7 @@ public class AppDbContext : DbContext
     public DbSet<ServiceCategory> ServiceCategories { get; set; }
     public DbSet<ServicePackage> ServicePackages { get; set; }
 public DbSet<ServicePackageItem> ServicePackageItems { get; set; }
+    public DbSet<AppNotification> Notifications { get; set; }
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
@@ -293,6 +294,24 @@ public DbSet<ServicePackageItem> ServicePackageItems { get; set; }
         });
 
         // ── SEED DATA (default rows inserted on first migration) ───────────
+        // ── NOTIFICATIONS (Alerts tab history) ─────────────────────────────
+        modelBuilder.Entity<AppNotification>(e =>
+        {
+            e.ToTable("Notifications");
+            e.HasKey(n => n.Id);
+            e.Property(n => n.Title).HasMaxLength(150).IsRequired();
+            e.Property(n => n.Body).HasMaxLength(500).IsRequired();
+            e.Property(n => n.Type).HasMaxLength(40).IsRequired();
+            e.Property(n => n.ReferenceId).HasMaxLength(50);
+            e.HasIndex(n => new { n.UserId, n.CreatedAt });
+
+            // One User → Many Notifications
+            e.HasOne(n => n.User)
+             .WithMany()
+             .HasForeignKey(n => n.UserId)
+             .OnDelete(DeleteBehavior.Cascade);
+        });
+
         SeedData(modelBuilder);
     }
 

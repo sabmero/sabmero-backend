@@ -312,6 +312,14 @@ public class AuthService : IAuthService
         if (user == null)
             return (false, "User not found.");
 
+        // One phone = one account: if another account logged in earlier on this
+        // same device, detach the token from it so notifications (and history)
+        // never go to the wrong person.
+        var others = await _db.Users
+            .Where(u => u.FcmToken == token && u.Id != userId)
+            .ToListAsync();
+        foreach (var o in others) o.FcmToken = null;
+
         user.FcmToken = token;
         await _db.SaveChangesAsync();
         return (true, "Device token saved.");

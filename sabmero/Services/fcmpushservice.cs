@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using sabmero.Data;
+using sabmero.Models;
 
 namespace sabmero.Services;
 
@@ -30,37 +31,78 @@ public class FcmPushService : IPushService
     private readonly IHttpClientFactory _httpFactory;
     private readonly IConfiguration _config;
     private readonly ILogger<FcmPushService> _logger;
-    private readonly AppDbContext _db;
+    private readonly IServiceScopeFactory _scopeFactory;
 
     // Cached OAuth token (valid ~1 hour).
     private static string? _cachedToken;
     private static DateTime _cachedTokenExpiry = DateTime.MinValue;
     private static readonly SemaphoreSlim _tokenLock = new(1, 1);
 
-    public FcmPushService(IHttpClientFactory httpFactory, IConfiguration config, ILogger<FcmPushService> logger, AppDbContext db)
+    public FcmPushService(IHttpClientFactory httpFactory, IConfiguration config, ILogger<FcmPushService> logger, IServiceScopeFactory scopeFactory)
     {
         _httpFactory = httpFactory;
         _config = config;
         _logger = logger;
-        _db = db;
+        _scopeFactory = scopeFactory;
     }
 
     public async Task SendToTokenAsync(string? fcmToken, string title, string body, Dictionary<string, string>? data = null)
     {
         if (string.IsNullOrWhiteSpace(fcmToken)) return;
 
-        // Respect the "Push Notifications" switch on the Settings screen:
-        // if the user who owns this device token turned it off, send nothing.
+        // 1) Save this notification to the user's Alerts-tab history (always, even
+        //    if their Push switch is off).
+        // 2) Respect the "Push Notifications" switch on the Settings screen: if the
+        //    owner of this device token turned it off, send no push.
+        // Uses its own DI scope so it never touches the caller's DbContext.
+        var pushAllowed = true;
         try
         {
-            if (await _db.Users.AsNoTracking().AnyAsync(u => u.FcmToken == fcmToken && !u.PushEnabled))
-                return;
+            using var scope = _scopeFactory.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+            var owners = await db.Users.AsNoTracking()
+                .Where(u => u.FcmToken == fcmToken)
+                .Select(u => new { u.Id, u.PushEnabled })
+                .ToListAsync();
+
+            if (owners.Count > 0)
+            {
+                var type = "system";
+                string? reference = null;
+                if (data != null)
+                {
+                    if (data.TryGetValue("type", out var t) && !string.IsNullOrWhiteSpace(t)) type = t;
+                    foreach (var key in new[] { "orderId", "bookingId", "paymentId", "requestId", "code" })
+                    {
+                        if (data.TryGetValue(key, out var v) && !string.IsNullOrWhiteSpace(v)) { reference = v; break; }
+                    }
+                }
+
+                foreach (var o in owners)
+                {
+                    db.Notifications.Add(new AppNotification
+                    {
+                        UserId = o.Id,
+                        Title = Trunc(title, 150),
+                        Body = Trunc(body, 500),
+                        Type = Trunc(type, 40),
+                        ReferenceId = reference == null ? null : Trunc(reference, 50),
+                        IsRead = false,
+                        CreatedAt = DateTime.UtcNow
+                    });
+                }
+                await db.SaveChangesAsync();
+
+                pushAllowed = owners.Any(o => o.PushEnabled);
+            }
         }
         catch (Exception ex)
         {
-            // If the check itself fails, fall through and send (fail-open).
-            _logger.LogWarning(ex, "Could not check PushEnabled before sending push");
+            // History/switch problems must never block the push itself.
+            _logger.LogWarning(ex, "Could not save notification history / check PushEnabled");
         }
+        if (!pushAllowed) return;
 
         var saPath = _config["Fcm:ServiceAccountPath"];
         if (string.IsNullOrWhiteSpace(saPath) || !File.Exists(saPath))
@@ -167,6 +209,9 @@ public class FcmPushService : IPushService
             _tokenLock.Release();
         }
     }
+
+    private static string Trunc(string s, int max) =>
+        string.IsNullOrEmpty(s) || s.Length <= max ? s : s[..max];
 
     private static string Base64Url(byte[] bytes) =>
         Convert.ToBase64String(bytes).TrimEnd('=').Replace('+', '-').Replace('/', '_');

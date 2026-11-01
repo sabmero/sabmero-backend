@@ -37,6 +37,12 @@ public class CreateBookingDto
     // Required ONLY when PaymentMethod == "QR": the customer's payment proof.
     // Upload via POST /api/uploads/payment first, then send the returned path here.
     public string? PaymentScreenshotPath { get; set; }
+
+    // Optional: which catalog entry the customer picked. Older app versions
+    // simply do not send these.
+    public int? ServiceCategoryId { get; set; }
+    public int? ServiceId { get; set; }
+    public int? ServicePackageId { get; set; }
 }
 
 // ── What the API SENDS BACK for a booking ──
@@ -66,6 +72,14 @@ public class BookingDto
     public string PaymentStatus { get; set; } = string.Empty;
     public decimal? ServiceCharge { get; set; }
     public DateTime CreatedAt { get; set; }
+
+    // Catalog linkage (null for older bookings)
+    public int? MainCategoryId { get; set; }
+    public string? MainCategoryName { get; set; }
+    public int? SubCategoryId { get; set; }
+    public string? SubCategoryName { get; set; }
+    public int? ServiceId { get; set; }
+    public int? ServicePackageId { get; set; }
 }
 
 // ── Admin SENDS this to assign a technician ──

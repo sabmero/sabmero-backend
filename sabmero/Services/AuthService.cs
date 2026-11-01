@@ -186,6 +186,7 @@ public class AuthService : IAuthService
                 FullName = user.FullName,
                 Phone = user.Phone,
                 Email = user.Email,
+                Gender = user.Gender,
                 Address = user.Address,
                 ProfilePictureUrl = user.ProfilePicturePath,
                 Role = user.Role,
@@ -194,6 +195,29 @@ public class AuthService : IAuthService
                 CreatedAt = user.CreatedAt
             }
         };
+    }
+
+    private static UserProfileDto ToProfileDto(User user) => new UserProfileDto
+    {
+        Id = user.Id,
+        FullName = user.FullName,
+        Phone = user.Phone,
+        Email = user.Email,
+        Gender = user.Gender,
+        Address = user.Address,
+        ProfilePictureUrl = user.ProfilePicturePath,
+        Role = user.Role,
+        IsKycVerified = user.IsKycVerified,
+        IsActive = user.IsActive,
+        CreatedAt = user.CreatedAt
+    };
+
+    // Full profile straight from the database (used by GET /api/auth/me), so
+    // the app always gets the saved photo, email, address and gender.
+    public async Task<UserProfileDto?> GetProfileAsync(int userId)
+    {
+        var user = await _db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == userId);
+        return user == null ? null : ToProfileDto(user);
     }
 
 
@@ -261,12 +285,14 @@ public class AuthService : IAuthService
 
     // ── UPDATE PROFILE (name / email / picture) ──────────────────────────────
     public async Task<(bool Success, string Message, UserProfileDto? Data)> UpdateProfileAsync(
-        int userId, string? fullName, string? email, Microsoft.AspNetCore.Http.IFormFile? profilePicture)
+        int userId, string? fullName, string? email, string? phone, string? address,
+        string? gender, string? currentPassword, Microsoft.AspNetCore.Http.IFormFile? profilePicture)
     {
         var user = await _db.Users.FindAsync(userId);
         if (user == null)
             return (false, "User not found.", null);
 
+        // Only the fields that are sent are changed; everything else stays as saved.
         if (!string.IsNullOrWhiteSpace(fullName))
             user.FullName = fullName.Trim();
 
@@ -280,6 +306,35 @@ public class AuthService : IAuthService
             user.Email = normalized;
         }
 
+        if (!string.IsNullOrWhiteSpace(phone) && phone.Trim() != user.Phone)
+        {
+            var newPhone = phone.Trim();
+            if (!System.Text.RegularExpressions.Regex.IsMatch(newPhone, @"^\d{10}$"))
+                return (false, "Phone must be exactly 10 digits.", null);
+
+            // The phone number is the login ID, so changing it needs the password.
+            if (string.IsNullOrEmpty(currentPassword) ||
+                !BCrypt.Net.BCrypt.Verify(currentPassword, user.PasswordHash))
+                return (false, "Enter your current password to change the phone number.", null);
+
+            var phoneTaken = await _db.Users.AnyAsync(u => u.Id != userId && u.Phone == newPhone);
+            if (phoneTaken)
+                return (false, "That phone number is already used by another account.", null);
+            user.Phone = newPhone;
+        }
+
+        if (address != null && !string.IsNullOrWhiteSpace(address))
+            user.Address = address.Trim();
+
+        if (gender != null)
+        {
+            var g = gender.Trim();
+            if (g.Length == 0) user.Gender = null;
+            else if (g.Equals("male", StringComparison.OrdinalIgnoreCase)) user.Gender = "Male";
+            else if (g.Equals("female", StringComparison.OrdinalIgnoreCase)) user.Gender = "Female";
+            else return (false, "Gender must be Male or Female.", null);
+        }
+
         if (profilePicture != null)
         {
             var (ok, msg, path) = await _files.SaveAsync(profilePicture, "profile");
@@ -290,19 +345,7 @@ public class AuthService : IAuthService
         await _db.SaveChangesAsync();
         _logger.LogInformation("Profile updated for user {UserId}", userId);
 
-        return (true, "Profile updated.", new UserProfileDto
-        {
-            Id = user.Id,
-            FullName = user.FullName,
-            Phone = user.Phone,
-            Email = user.Email,
-            Address = user.Address,
-            ProfilePictureUrl = user.ProfilePicturePath,
-            Role = user.Role,
-            IsKycVerified = user.IsKycVerified,
-            IsActive = user.IsActive,
-            CreatedAt = user.CreatedAt
-        });
+        return (true, "Profile updated.", ToProfileDto(user));
     }
 
     // ── CLEAR FCM TOKEN (logout) ──────────────────────────────────────────────

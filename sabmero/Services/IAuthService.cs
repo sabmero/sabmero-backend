@@ -12,7 +12,11 @@ public interface IAuthService
     Task<(bool Success, string Message, AuthResponseDto? Data)> VerifyOtpAsync(VerifyOtpDto dto);
     Task<(bool Success, string Message)> ForgotPasswordAsync(ForgotPasswordDto dto);
     Task<(bool Success, string Message)> ResetPasswordAsync(ResetPasswordDto dto);
-    Task<(bool Success, string Message, UserProfileDto? Data)> UpdateProfileAsync(int userId, string? fullName, string? email, Microsoft.AspNetCore.Http.IFormFile? profilePicture);
+    Task<UserProfileDto?> GetProfileAsync(int userId);
+
+    Task<(bool Success, string Message, UserProfileDto? Data)> UpdateProfileAsync(
+        int userId, string? fullName, string? email, string? phone, string? address,
+        string? gender, string? currentPassword, Microsoft.AspNetCore.Http.IFormFile? profilePicture);
     Task<(bool Success, string Message)> SaveFcmTokenAsync(int userId, string token);
     Task ClearFcmTokenAsync(int userId);
     Task<(bool Success, string Message, NotificationSettingsDto? Data)> GetNotificationSettingsAsync(int userId);

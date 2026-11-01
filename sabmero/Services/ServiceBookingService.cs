@@ -89,6 +89,8 @@ public class ServiceBookingService : IServiceBookingService
         await _db.SaveChangesAsync();
         _logger.LogInformation("Service booking {Id} created by user {UserId}", booking.Id, userId);
 
+        await NotifyBookingCreatedAsync(booking);
+
         return (true, "Service booked successfully.", await BuildDtoAsync(booking.Id));
     }
 
@@ -167,10 +169,22 @@ public class ServiceBookingService : IServiceBookingService
 
         await _db.SaveChangesAsync();
 
-        // Notify the technician they've been assigned a new job.
-        await _push.SendToTokenAsync(tech.FcmToken, "New Job Assigned 🔧",
-            $"You've been assigned a {booking.ServiceType} job (#{booking.Id}) at {booking.ServiceAddress}.",
-            new Dictionary<string, string> { ["type"] = "booking_assigned", ["bookingId"] = booking.Id.ToString() });
+        try
+        {
+            // Technician: a new job (only this technician is notified).
+            await _push.SendToUserAsync(tech.Id, "New Job Assigned 🔧",
+                $"You've been assigned a {booking.ServiceType} job (#{booking.Id}) at {booking.ServiceAddress}.",
+                new Dictionary<string, string> { ["type"] = "booking_assigned", ["bookingId"] = booking.Id.ToString() });
+
+            // Customer: "Assigned to Technician" step.
+            await _push.SendToUserAsync(booking.UserId, "Technician Assigned 👷",
+                $"{tech.FullName} has been assigned to your {booking.ServiceType} booking #{booking.Id}.",
+                new Dictionary<string, string> { ["type"] = "booking", ["bookingId"] = booking.Id.ToString(), ["status"] = "Approved" });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to send assignment notifications for booking {Id}", booking.Id);
+        }
 
         return (true, "Technician assigned.");
     }
@@ -214,8 +228,7 @@ public class ServiceBookingService : IServiceBookingService
         await _db.SaveChangesAsync();
 
         // Notify the customer about the status change (fire-and-forget safe).
-        var customer = await _db.Users.FindAsync(booking.UserId);
-        if (customer != null)
+        try
         {
             var (title, msg) = dto.Status switch
             {
@@ -225,8 +238,26 @@ public class ServiceBookingService : IServiceBookingService
                 "Completed" => ("Service Completed 🎉", $"Your {booking.ServiceType} booking #{booking.Id} is completed. Please leave a review!"),
                 _ => ("Booking Update", $"Your booking #{booking.Id} is now '{dto.Status}'.")
             };
-            await _push.SendToTokenAsync(customer.FcmToken, title, msg,
-                new Dictionary<string, string> { ["type"] = "booking", ["bookingId"] = booking.Id.ToString(), ["status"] = dto.Status });
+            var data = new Dictionary<string, string> { ["type"] = "booking", ["bookingId"] = booking.Id.ToString(), ["status"] = dto.Status };
+
+            // Customer: each step of the tracker.
+            await _push.SendToUserAsync(booking.UserId, title, msg, data);
+
+            // Admins: told about technician progress (not the admin who made the change).
+            var admins = await _db.Users
+                .Where(u => u.Role == "Admin" && u.IsActive && u.Id != userId)
+                .Select(u => u.Id).ToListAsync();
+            var adminTitle = dto.Status == "Completed" ? "Service Completed ✅" : "Booking Update 🔧";
+            var adminBody = dto.Status == "Completed"
+                ? $"Booking #{booking.Id} ({booking.ServiceType}) completed. Charge: Rs. {booking.ServiceCharge:0.##} • Payment: {booking.PaymentMethod}."
+                : $"Booking #{booking.Id} ({booking.ServiceType}) is now '{dto.Status}'.";
+            foreach (var adminId in admins)
+                await _push.SendToUserAsync(adminId, adminTitle, adminBody,
+                    new Dictionary<string, string> { ["type"] = "booking_status", ["bookingId"] = booking.Id.ToString(), ["status"] = dto.Status });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to send status notifications for booking {Id}", booking.Id);
         }
 
         return (true, $"Booking status updated to {dto.Status}.");
@@ -246,13 +277,62 @@ public class ServiceBookingService : IServiceBookingService
         if (!cancellable.Contains(booking.Status))
             return (false, "This booking can no longer be cancelled because the technician is already on the way or the job is completed.");
 
+        var cancelledId = booking.Id;
+        var cancelledType = booking.ServiceType;
+        var cancelledTech = booking.TechnicianId;
+
         // Delete the booking record on cancellation.
         _db.ServiceBookings.Remove(booking);
         await _db.SaveChangesAsync();
+
+        try
+        {
+            var ids = await _db.Users
+                .Where(u => u.IsActive && (u.Role == "Admin" || (cancelledTech != null && u.Id == cancelledTech)))
+                .Select(u => u.Id).ToListAsync();
+            foreach (var id in ids)
+                await _push.SendToUserAsync(id, "Booking Cancelled",
+                    $"Service booking #{cancelledId} ({cancelledType}) was cancelled by the customer.",
+                    new Dictionary<string, string> { ["type"] = "booking_cancelled" });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to send cancel notifications for booking {Id}", cancelledId);
+        }
         return (true, "Booking cancelled.");
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────
+    // New booking: tell the customer ("Booking Received") and every admin.
+    private async Task NotifyBookingCreatedAsync(ServiceBooking booking)
+    {
+        try
+        {
+            var customer = await _db.Users.AsNoTracking()
+                .Where(u => u.Id == booking.UserId)
+                .Select(u => new { u.Id, u.FullName })
+                .FirstOrDefaultAsync();
+
+            await _push.SendToUserAsync(booking.UserId, "Booking Received 📝",
+                $"Your {booking.ServiceType} booking #{booking.Id} has been received. We'll assign a technician soon.",
+                new Dictionary<string, string> { ["type"] = "booking", ["bookingId"] = booking.Id.ToString(), ["status"] = "Pending" });
+
+            var who = string.IsNullOrWhiteSpace(customer?.FullName) ? "a customer" : customer!.FullName;
+            var admins = await _db.Users
+                .Where(u => u.Role == "Admin" && u.IsActive && u.Id != booking.UserId)
+                .Select(u => u.Id).ToListAsync();
+            foreach (var adminId in admins)
+                await _push.SendToUserAsync(adminId, "New Service Booking 🔧",
+                    $"Booking #{booking.Id} ({booking.ServiceType}) from {who} on {booking.BookingDate:dd MMM} {booking.TimeSlot}. Assign a technician.",
+                    new Dictionary<string, string> { ["type"] = "booking_new", ["bookingId"] = booking.Id.ToString() });
+        }
+        catch (Exception ex)
+        {
+            // A notification problem must never fail the customer's booking.
+            _logger.LogError(ex, "Failed to send booking-created notifications for booking {Id}", booking.Id);
+        }
+    }
+
     private async Task<List<BookingDto>> BuildManyAsync(List<int> ids)
     {
         var result = new List<BookingDto>();

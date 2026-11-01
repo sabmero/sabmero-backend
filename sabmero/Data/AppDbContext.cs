@@ -216,6 +216,12 @@ public DbSet<ServicePackageItem> ServicePackageItems { get; set; }
             e.Property(r => r.Description).HasMaxLength(500);
             e.Property(r => r.Charge).HasPrecision(18, 2);
             e.Property(r => r.ImagePath).HasMaxLength(400);
+            e.Property(r => r.NameNe).HasMaxLength(100);
+            e.Property(r => r.DescriptionNe).HasMaxLength(500);
+            e.Property(r => r.OldPrice).HasPrecision(18, 2);
+            e.Property(r => r.DurationText).HasMaxLength(60);
+            e.Property(r => r.Warranty).HasMaxLength(200);
+            e.Property(r => r.Requirements).HasMaxLength(1000);
         });
 
         // ── VENDOR PAYMENTS (admin → vendor commission / settlement) ────────

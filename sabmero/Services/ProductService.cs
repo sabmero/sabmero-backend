@@ -116,6 +116,7 @@ public class ProductService : IProductService
             Name = dto.Name.Trim(),
             Description = dto.Description.Trim(),
             Price = dto.Price,
+            OldPrice = CleanOldPrice(dto.OldPrice, dto.Price),
             Stock = dto.Stock,
             ImagePath = ResolveCover(dto.ImagePath, dto.ImagePaths),
             ImagePathsCsv = JoinImages(dto.ImagePaths),
@@ -154,6 +155,7 @@ public class ProductService : IProductService
         product.Name = dto.Name.Trim();
         product.Description = dto.Description.Trim();
         product.Price = dto.Price;
+        product.OldPrice = CleanOldPrice(dto.OldPrice, dto.Price);
         product.Stock = dto.Stock;
         product.CategoryId = dto.CategoryId;
         product.ImagePath = ResolveCover(dto.ImagePath, dto.ImagePaths);
@@ -198,6 +200,7 @@ public class ProductService : IProductService
         Name = p.Name,
         Description = p.Description,
         Price = p.Price,
+        OldPrice = p.OldPrice,
         Stock = p.Stock,
         ImagePath = p.ImagePath,
         ImagePathsCsv_Internal = p.ImagePathsCsv,
@@ -209,6 +212,10 @@ public class ProductService : IProductService
         ReviewCount = p.Reviews.Count,
         CreatedAt = p.CreatedAt
     };
+
+    // An old price only makes sense when it is higher than the selling price.
+    private static decimal? CleanOldPrice(decimal? oldPrice, decimal price)
+        => oldPrice.HasValue && oldPrice.Value > price ? oldPrice : null;
 
     // ── Multi-image helpers ──────────────────────────────────────────────────
     // Cover = explicit ImagePath if given, else first of ImagePaths.

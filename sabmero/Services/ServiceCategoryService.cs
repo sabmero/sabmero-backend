@@ -66,6 +66,9 @@ public class ServiceCategoryService : IServiceCategoryService
         var category = new ServiceCategory
         {
             Name = name,
+            NameNe = Clean(dto.NameNe),
+            Description = Clean(dto.Description),
+            DescriptionNe = Clean(dto.DescriptionNe),
             ImagePath = dto.ImagePath,
             ParentId = dto.ParentId,
             SortOrder = dto.SortOrder,
@@ -110,6 +113,10 @@ public class ServiceCategoryService : IServiceCategoryService
             return (false, "A category with this name already exists here.");
 
         category.Name = name;
+        // Phase 2B fields: changed only when sent.
+        if (dto.NameNe != null) category.NameNe = Clean(dto.NameNe);
+        if (dto.Description != null) category.Description = Clean(dto.Description);
+        if (dto.DescriptionNe != null) category.DescriptionNe = Clean(dto.DescriptionNe);
         category.ImagePath = dto.ImagePath;
         category.ParentId = dto.ParentId;
         category.SortOrder = dto.SortOrder;
@@ -139,10 +146,16 @@ public class ServiceCategoryService : IServiceCategoryService
         return (true, "Category deleted.");
     }
 
+    private static string? Clean(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
     private static ServiceCategoryDto Map(ServiceCategory c) => new()
     {
         Id = c.Id,
         Name = c.Name,
+        NameNe = c.NameNe,
+        Description = c.Description,
+        DescriptionNe = c.DescriptionNe,
         ImagePath = c.ImagePath,
         ParentId = c.ParentId,
         SortOrder = c.SortOrder,

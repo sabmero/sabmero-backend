@@ -39,6 +39,30 @@ public class ServiceBookingService : IServiceBookingService
         var hasShot = paymentMethod == "QR" && !string.IsNullOrWhiteSpace(dto.PaymentScreenshotPath);
         var paymentStatus = (paymentMethod == "QR" && hasShot) ? "Submitted" : "Pending";
 
+        // Optional catalog linkage: the picked service/package/category must exist.
+        if (dto.ServiceId.HasValue
+            && !await _db.RepairServices.AnyAsync(s => s.Id == dto.ServiceId.Value))
+            return (false, "The selected service was not found.", null);
+        if (dto.ServicePackageId.HasValue
+            && !await _db.ServicePackages.AnyAsync(p => p.Id == dto.ServicePackageId.Value))
+            return (false, "The selected package was not found.", null);
+        if (dto.ServiceCategoryId.HasValue
+            && !await _db.ServiceCategories.AnyAsync(c => c.Id == dto.ServiceCategoryId.Value))
+            return (false, "The selected category was not found.", null);
+
+        // Work out the category when only a service or package was sent.
+        var categoryId = dto.ServiceCategoryId;
+        if (!categoryId.HasValue && dto.ServiceId.HasValue)
+            categoryId = await _db.RepairServices
+                .Where(s => s.Id == dto.ServiceId.Value)
+                .Select(s => s.CategoryId)
+                .FirstOrDefaultAsync();
+        if (!categoryId.HasValue && dto.ServicePackageId.HasValue)
+            categoryId = await _db.ServicePackages
+                .Where(p => p.Id == dto.ServicePackageId.Value)
+                .Select(p => (int?)p.CategoryId)
+                .FirstOrDefaultAsync();
+
         var booking = new ServiceBooking
         {
             UserId = userId,
@@ -55,6 +79,9 @@ public class ServiceBookingService : IServiceBookingService
             PaymentMethod = paymentMethod,
             PaymentScreenshotPath = paymentMethod == "QR" ? dto.PaymentScreenshotPath : null,
             PaymentStatus = paymentStatus,
+            ServiceCategoryId = categoryId,
+            ServiceId = dto.ServiceId,
+            ServicePackageId = dto.ServicePackageId,
             CreatedAt = DateTime.UtcNow
         };
 
@@ -141,7 +168,7 @@ public class ServiceBookingService : IServiceBookingService
         await _db.SaveChangesAsync();
 
         // Notify the technician they've been assigned a new job.
-        await _push.SendToUserAsync(tech.Id, "New Job Assigned 🔧",
+        await _push.SendToTokenAsync(tech.FcmToken, "New Job Assigned 🔧",
             $"You've been assigned a {booking.ServiceType} job (#{booking.Id}) at {booking.ServiceAddress}.",
             new Dictionary<string, string> { ["type"] = "booking_assigned", ["bookingId"] = booking.Id.ToString() });
 
@@ -198,7 +225,7 @@ public class ServiceBookingService : IServiceBookingService
                 "Completed" => ("Service Completed 🎉", $"Your {booking.ServiceType} booking #{booking.Id} is completed. Please leave a review!"),
                 _ => ("Booking Update", $"Your booking #{booking.Id} is now '{dto.Status}'.")
             };
-            await _push.SendToUserAsync(customer.Id, title, msg,
+            await _push.SendToTokenAsync(customer.FcmToken, title, msg,
                 new Dictionary<string, string> { ["type"] = "booking", ["bookingId"] = booking.Id.ToString(), ["status"] = dto.Status });
         }
 
@@ -255,6 +282,32 @@ public class ServiceBookingService : IServiceBookingService
             techPhone = tech?.Phone;
         }
 
+        // Resolve the picked category into main / sub (older bookings have none).
+        int? mainId = null, subId = null;
+        string? mainName = null, subName = null;
+        if (b.ServiceCategoryId.HasValue)
+        {
+            var cat = await _db.ServiceCategories.AsNoTracking()
+                .FirstOrDefaultAsync(c => c.Id == b.ServiceCategoryId.Value);
+            if (cat != null)
+            {
+                if (cat.ParentId.HasValue)
+                {
+                    var parent = await _db.ServiceCategories.AsNoTracking()
+                        .FirstOrDefaultAsync(c => c.Id == cat.ParentId.Value);
+                    subId = cat.Id;
+                    subName = cat.Name;
+                    mainId = parent?.Id;
+                    mainName = parent?.Name;
+                }
+                else
+                {
+                    mainId = cat.Id;
+                    mainName = cat.Name;
+                }
+            }
+        }
+
         return new BookingDto
         {
             Id = b.Id,
@@ -280,7 +333,13 @@ public class ServiceBookingService : IServiceBookingService
             PaymentScreenshotPath = b.PaymentScreenshotPath,
             PaymentStatus = b.PaymentStatus,
             ServiceCharge = b.ServiceCharge,
-            CreatedAt = b.CreatedAt
+            CreatedAt = b.CreatedAt,
+            MainCategoryId = mainId,
+            MainCategoryName = mainName,
+            SubCategoryId = subId,
+            SubCategoryName = subName,
+            ServiceId = b.ServiceId,
+            ServicePackageId = b.ServicePackageId
         };
     }
     // ── Damage-photo helpers ─────────────────────────────────────────────────

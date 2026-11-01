@@ -124,25 +124,13 @@ public class AuthController : ControllerBase
     // Flutter must send: Authorization: Bearer <token>  in the request header.
     [Authorize]
     [HttpGet("me")]
-    public IActionResult Me()
+    public async Task<IActionResult> Me()
     {
-        // Read user info from the JWT token claims
-        var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        var phone = User.FindFirst(ClaimTypes.MobilePhone)?.Value;
-        var role = User.FindFirst(ClaimTypes.Role)?.Value;
-        var fullName = User.FindFirst(ClaimTypes.Name)?.Value;
-
-        return Ok(new
-        {
-            success = true,
-            data = new
-            {
-                id = userId,
-                fullName,
-                phone,
-                role
-            }
-        });
+        var userId = User.GetUserId();
+        var profile = await _auth.GetProfileAsync(userId);
+        if (profile == null)
+            return NotFound(new { success = false, message = "User not found." });
+        return Ok(new { success = true, data = profile });
     }
 
     // ── POST /api/auth/forgot-password ────────────────────────────────────────
@@ -175,10 +163,15 @@ public class AuthController : ControllerBase
     public async Task<IActionResult> UpdateProfile(
         [FromForm] string? fullName,
         [FromForm] string? email,
+        [FromForm] string? phone,
+        [FromForm] string? address,
+        [FromForm] string? gender,
+        [FromForm] string? currentPassword,
         [FromForm] IFormFile? profilePicture)
     {
         var userId = User.GetUserId();
-        var (success, message, data) = await _auth.UpdateProfileAsync(userId, fullName, email, profilePicture);
+        var (success, message, data) = await _auth.UpdateProfileAsync(
+            userId, fullName, email, phone, address, gender, currentPassword, profilePicture);
         if (!success) return BadRequest(new { success = false, message });
         return Ok(new { success = true, message, data });
     }

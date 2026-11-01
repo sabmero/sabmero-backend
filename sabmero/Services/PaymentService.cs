@@ -82,6 +82,7 @@ public class PaymentService : IPaymentService
             order.PaymentStatus = "Submitted";
             await _db.SaveChangesAsync();
             _logger.LogInformation("Payment screenshot submitted for order {Id} by user {UserId}", dto.Id, userId);
+            await NotifyPaymentSubmittedAsync("Order", order.Id, userId);
             return (true, "Payment screenshot submitted. Awaiting verification.");
         }
         else // Booking
@@ -97,7 +98,46 @@ public class PaymentService : IPaymentService
             booking.PaymentStatus = "Submitted";
             await _db.SaveChangesAsync();
             _logger.LogInformation("Payment screenshot submitted for booking {Id} by user {UserId}", dto.Id, userId);
+            await NotifyPaymentSubmittedAsync("Booking", booking.Id, userId);
             return (true, "Payment screenshot submitted. Awaiting verification.");
+        }
+    }
+
+    // A customer sent a payment screenshot: tell the admin(s) and, for an order,
+    // ONLY the vendor(s) whose products are in that order.
+    private async Task NotifyPaymentSubmittedAsync(string type, int id, int customerId)
+    {
+        try
+        {
+            var ids = new HashSet<int>(await _db.Users
+                .Where(u => u.Role == "Admin" && u.IsActive && u.Id != customerId)
+                .Select(u => u.Id).ToListAsync());
+
+            Dictionary<string, string> data;
+            string body;
+            if (type == "Order")
+            {
+                var vendorUserIds = await _db.Orders
+                    .Where(o => o.Id == id)
+                    .SelectMany(o => o.OrderItems)
+                    .Select(oi => oi.Product.Vendor.UserId)
+                    .Distinct().ToListAsync();
+                foreach (var v in vendorUserIds) ids.Add(v);
+                body = $"Payment screenshot received for order #{id}. Please verify it.";
+                data = new Dictionary<string, string> { ["type"] = "payment_submitted", ["orderId"] = id.ToString() };
+            }
+            else
+            {
+                body = $"Payment screenshot received for service booking #{id}. Please verify it.";
+                data = new Dictionary<string, string> { ["type"] = "payment_submitted", ["bookingId"] = id.ToString() };
+            }
+
+            foreach (var uid in ids)
+                await _push.SendToUserAsync(uid, "Payment Submitted 💳", body, data);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to send payment-submitted notifications for {Type} {Id}", type, id);
         }
     }
 

@@ -37,6 +37,13 @@ public class ServiceBooking
     // order that created it. Null for ordinary standalone repair bookings.
     public int? RelatedOrderId { get; set; }
 
+    // ── Service catalog linkage (optional) ───────────────────────────────────
+    // What the customer picked in the app. Plain ids (no foreign keys) so the
+    // booking history survives if an admin later deletes a service or category.
+    public int? ServiceCategoryId { get; set; }   // main or sub category chosen
+    public int? ServiceId { get; set; }           // RepairService chosen (if any)
+    public int? ServicePackageId { get; set; }    // ServicePackage chosen (if any)
+
     // Navigation
     public User User { get; set; } = null!;
     public Order? RelatedOrder { get; set; }

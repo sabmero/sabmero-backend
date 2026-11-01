@@ -11,6 +11,7 @@ public class User
     public string FullName { get; set; } = string.Empty;
     public string Phone { get; set; } = string.Empty;   // used as login ID
     public string? Email { get; set; }
+    public string? Gender { get; set; }   // "Male" | "Female" | null (not set)
     public string PasswordHash { get; set; } = string.Empty;
     public string Address { get; set; } = string.Empty;
 

@@ -30,6 +30,7 @@ public class AppDbContext : DbContext
     public DbSet<AppSetting> AppSettings { get; set; }
     public DbSet<VendorPayment> VendorPayments { get; set; }
     public DbSet<TechnicianPayment> TechnicianPayments { get; set; }
+    public DbSet<StatusEvent> StatusEvents { get; set; }
     public DbSet<RepairService> RepairServices { get; set; }
     public DbSet<ServiceCategory> ServiceCategories { get; set; }
     public DbSet<ServicePackage> ServicePackages { get; set; }
@@ -240,6 +241,18 @@ public DbSet<ServicePackageItem> ServicePackageItems { get; set; }
             e.Property(vp => vp.Note).HasMaxLength(300);
             e.Property(vp => vp.ScreenshotPath).HasMaxLength(400);
             e.Property(vp => vp.Status).HasMaxLength(15).HasDefaultValue("Paid");
+        });
+
+        // ── STATUS EVENTS (activity timeline of bookings / orders) ─────────
+        modelBuilder.Entity<StatusEvent>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Kind).HasMaxLength(10).IsRequired();
+            e.Property(x => x.Status).HasMaxLength(30).IsRequired();
+            e.Property(x => x.Note).HasMaxLength(300);
+            e.Property(x => x.ActorName).HasMaxLength(100);
+            e.Property(x => x.ActorRole).HasMaxLength(20);
+            e.HasIndex(x => new { x.Kind, x.RefId });
         });
 
         // ── TECHNICIAN PAYMENTS (admin → technician) ───────────────────────

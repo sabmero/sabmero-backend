@@ -21,7 +21,7 @@ public interface IOrderService
     Task<List<OrderDto>> GetVendorOrdersAsync(int userId);
 
     // Admin/Rider: change an order's status.
-    Task<(bool Success, string Message)> UpdateStatusAsync(int orderId, string status, int actorUserId, string actorRole);
+    Task<(bool Success, string Message)> UpdateStatusAsync(int orderId, string status, int actorUserId, string actorRole, UpdateOrderStatusDto? extra = null);
 
     // Admin: assign a rider to an order.
     Task<(bool Success, string Message)> AssignRiderAsync(int orderId, int riderId);

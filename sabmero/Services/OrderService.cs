@@ -231,7 +231,7 @@ public class OrderService : IOrderService
         return await BuildManyAsync(ids);
     }
 
-    public async Task<(bool Success, string Message)> UpdateStatusAsync(int orderId, string status, int actorUserId, string actorRole)
+    public async Task<(bool Success, string Message)> UpdateStatusAsync(int orderId, string status, int actorUserId, string actorRole, UpdateOrderStatusDto? extra = null)
     {
         var allowed = new[] { "Pending", "Processing", "Dispatched", "Delivered", "Cancelled" };
         if (!allowed.Contains(status))
@@ -276,6 +276,27 @@ public class OrderService : IOrderService
             return (false, "Payment is not verified yet. This order can't be processed until the payment screenshot is approved.");
         }
 
+        // Delivered: stamp the time and, for a cash-on-delivery order, record how
+        // the rider collected the money (Cash in words / Online screenshot).
+        string? collectedNote = null;
+        if (status == "Delivered" && order.Status != "Delivered")
+        {
+            order.DeliveredAt = DateTime.UtcNow;
+            var codDue = order.PaymentMethod == "COD" && order.PaymentStatus != "Paid";
+            if (codDue && extra != null && !string.IsNullOrWhiteSpace(extra.CollectionMethod))
+            {
+                var m = extra.CollectionMethod.Trim().Equals("online", StringComparison.OrdinalIgnoreCase) ? "Online" : "Cash";
+                if (m == "Online" && string.IsNullOrWhiteSpace(extra.CollectionScreenshotPath))
+                    return (false, "Please attach the online payment screenshot.");
+
+                order.CollectionMethod = m;
+                order.CollectionAmountInWords = string.IsNullOrWhiteSpace(extra.AmountInWords) ? null : extra.AmountInWords.Trim();
+                order.CollectionScreenshotPath = m == "Online" ? extra.CollectionScreenshotPath : null;
+                collectedNote = $" Collected Rs. {order.TotalAmount:0.##} via {m}"
+                    + (order.CollectionAmountInWords != null ? $" ({order.CollectionAmountInWords})." : ".");
+            }
+        }
+
         // If cancelling, return the stock back to products.
         if (status == "Cancelled" && order.Status != "Cancelled")
         {
@@ -310,7 +331,7 @@ public class OrderService : IOrderService
 
         // Also tell the admin(s) and the vendor(s) of this order (except the
         // person who just made the change) — e.g. vendor accepts → admin is told.
-        await NotifyStaffStatusChangeAsync(order.Id, status, actorUserId, actorRole);
+        await NotifyStaffStatusChangeAsync(order.Id, status, actorUserId, actorRole, collectedNote);
 
         return (true, $"Order status updated to {status}.");
     }
@@ -338,10 +359,23 @@ public class OrderService : IOrderService
 
         await _db.SaveChangesAsync();
 
-        // Notify the rider they've been assigned a new delivery.
+        // Notify the rider: what they are delivering (names + the first product's
+        // photo) and how much cash to collect, if any.
+        var lines = await _db.OrderItems
+            .Where(oi => oi.OrderId == order.Id)
+            .Select(oi => new { oi.Quantity, oi.Product.Name, oi.Product.ImagePath })
+            .ToListAsync();
+        var what = lines.Count == 0 ? "" : string.Join(", ", lines.Take(3).Select(l => $"{l.Quantity}x {l.Name}"))
+                   + (lines.Count > 3 ? $" +{lines.Count - 3} more" : "");
+        var cod = order.PaymentMethod == "COD" && order.PaymentStatus != "Paid"
+            ? $" Collect Rs. {order.TotalAmount:0.##} (COD)." : "";
+        var data = new Dictionary<string, string> { ["type"] = "order_assigned", ["orderId"] = order.Id.ToString() };
+        var photo = lines.Select(l => l.ImagePath).FirstOrDefault(x => !string.IsNullOrWhiteSpace(x));
+        if (photo != null) data["image"] = photo;
+
         await _push.SendToUserAsync(rider.Id, "New Delivery Assigned 🛵",
-            $"You've been assigned order #{order.Id} for delivery to {order.DeliveryAddress}.",
-            new Dictionary<string, string> { ["type"] = "order_assigned", ["orderId"] = order.Id.ToString() });
+            $"Order #{order.Id}: {what} → {order.DeliveryAddress}.{cod}".Replace(": →", " →"),
+            data);
 
         return (true, "Rider assigned.");
     }
@@ -443,7 +477,7 @@ public class OrderService : IOrderService
         }
     }
 
-    private async Task NotifyStaffStatusChangeAsync(int orderId, string status, int actorUserId, string actorRole)
+    private async Task NotifyStaffStatusChangeAsync(int orderId, string status, int actorUserId, string actorRole, string? extraNote = null)
     {
         try
         {
@@ -458,7 +492,7 @@ public class OrderService : IOrderService
             {
                 "Processing" => ("Order Accepted ✅", $"Order #{orderId} has been accepted ({actorRole})."),
                 "Dispatched" => ("Order Dispatched 🚚", $"Order #{orderId} has been dispatched."),
-                "Delivered" => ("Order Delivered 📦", $"Order #{orderId} has been delivered."),
+                "Delivered" => ("Order Delivered 📦", $"Order #{orderId} has been delivered.{extraNote}"),
                 "Cancelled" => ("Order Cancelled", $"Order #{orderId} was cancelled ({actorRole})."),
                 _ => ("Order Update", $"Order #{orderId} is now '{status}'.")
             };

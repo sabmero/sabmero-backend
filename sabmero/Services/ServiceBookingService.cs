@@ -172,9 +172,16 @@ public class ServiceBookingService : IServiceBookingService
         try
         {
             // Technician: a new job (only this technician is notified).
+            var jobData = new Dictionary<string, string> { ["type"] = "booking_assigned", ["bookingId"] = booking.Id.ToString() };
+            var damagePhoto = !string.IsNullOrWhiteSpace(booking.DamageImagePath)
+                ? booking.DamageImagePath
+                : booking.DamageImagePathsCsv?.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).FirstOrDefault();
+            if (!string.IsNullOrWhiteSpace(damagePhoto)) jobData["image"] = damagePhoto;
+
+            var issue = string.IsNullOrWhiteSpace(booking.Description) ? "" : $" Issue: {(booking.Description.Length > 80 ? booking.Description[..80] + "…" : booking.Description)}";
             await _push.SendToUserAsync(tech.Id, "New Job Assigned 🔧",
-                $"You've been assigned a {booking.ServiceType} job (#{booking.Id}) at {booking.ServiceAddress}.",
-                new Dictionary<string, string> { ["type"] = "booking_assigned", ["bookingId"] = booking.Id.ToString() });
+                $"{booking.ServiceType} job #{booking.Id} at {booking.ServiceAddress}.{issue}",
+                jobData);
 
             // Customer: "Assigned to Technician" step.
             await _push.SendToUserAsync(booking.UserId, "Technician Assigned 👷",
@@ -212,6 +219,15 @@ public class ServiceBookingService : IServiceBookingService
         if (dto.Status == "Approved" && booking.PaymentMethod == "QR" && booking.PaymentStatus != "Verified")
             return (false, "Payment is not verified yet. Verify the payment screenshot before approving this booking.");
 
+        // Completing a job: normalise how the money was collected.
+        string? collectionMethod = null;
+        if (dto.Status == "Completed" && !string.IsNullOrWhiteSpace(dto.CollectionMethod))
+        {
+            collectionMethod = dto.CollectionMethod.Trim().Equals("online", StringComparison.OrdinalIgnoreCase) ? "Online" : "Cash";
+            if (collectionMethod == "Online" && string.IsNullOrWhiteSpace(dto.CollectionScreenshotPath))
+                return (false, "Please attach the online payment screenshot.");
+        }
+
         booking.Status = dto.Status;
 
         // Timestamps for the technician workflow.
@@ -223,6 +239,13 @@ public class ServiceBookingService : IServiceBookingService
             booking.CompletedTime = DateTime.UtcNow;
             if (dto.ServiceCharge.HasValue)
                 booking.ServiceCharge = dto.ServiceCharge.Value;
+
+            if (collectionMethod != null)
+            {
+                booking.CollectionMethod = collectionMethod;
+                booking.CollectionAmountInWords = string.IsNullOrWhiteSpace(dto.AmountInWords) ? null : dto.AmountInWords.Trim();
+                booking.CollectionScreenshotPath = collectionMethod == "Online" ? dto.CollectionScreenshotPath : null;
+            }
         }
 
         await _db.SaveChangesAsync();
@@ -249,7 +272,8 @@ public class ServiceBookingService : IServiceBookingService
                 .Select(u => u.Id).ToListAsync();
             var adminTitle = dto.Status == "Completed" ? "Service Completed ✅" : "Booking Update 🔧";
             var adminBody = dto.Status == "Completed"
-                ? $"Booking #{booking.Id} ({booking.ServiceType}) completed. Charge: Rs. {booking.ServiceCharge:0.##} • Payment: {booking.PaymentMethod}."
+                ? $"Booking #{booking.Id} ({booking.ServiceType}) completed. Collected Rs. {booking.ServiceCharge:0.##} via {booking.CollectionMethod ?? booking.PaymentMethod}"
+                  + (string.IsNullOrWhiteSpace(booking.CollectionAmountInWords) ? "." : $" ({booking.CollectionAmountInWords}).")
                 : $"Booking #{booking.Id} ({booking.ServiceType}) is now '{dto.Status}'.";
             foreach (var adminId in admins)
                 await _push.SendToUserAsync(adminId, adminTitle, adminBody,
@@ -413,6 +437,9 @@ public class ServiceBookingService : IServiceBookingService
             PaymentScreenshotPath = b.PaymentScreenshotPath,
             PaymentStatus = b.PaymentStatus,
             ServiceCharge = b.ServiceCharge,
+            CollectionMethod = b.CollectionMethod,
+            CollectionAmountInWords = b.CollectionAmountInWords,
+            CollectionScreenshotPath = b.CollectionScreenshotPath,
             CreatedAt = b.CreatedAt,
             MainCategoryId = mainId,
             MainCategoryName = mainName,

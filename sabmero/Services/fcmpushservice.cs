@@ -127,12 +127,18 @@ public class FcmPushService : IPushService
             var projectId = sa.GetProperty("project_id").GetString()!;
             var accessToken = await GetAccessTokenAsync(sa);
 
+            // Optional picture (e.g. the product being delivered) shown in the
+            // notification tray. data["image"] may be a relative upload path.
+            var notif = new Dictionary<string, string> { ["title"] = title, ["body"] = body };
+            var imageUrl = ToAbsoluteUrl(data != null && data.TryGetValue("image", out var img) ? img : null);
+            if (imageUrl != null) notif["image"] = imageUrl;
+
             var message = new
             {
                 message = new
                 {
                     token = fcmToken,
-                    notification = new { title, body },
+                    notification = notif,
                     data = data ?? new Dictionary<string, string>(),
                     android = new { priority = "HIGH", notification = new { channel_id = "sabmero_default" } },
                     apns = new { payload = new { aps = new { sound = "default", badge = 1 } } }
@@ -169,6 +175,14 @@ public class FcmPushService : IPushService
             // Push failures must never break the main request flow.
             _logger.LogError(ex, "FCM push error");
         }
+    }
+
+    private string? ToAbsoluteUrl(string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path)) return null;
+        if (path.StartsWith("http", StringComparison.OrdinalIgnoreCase)) return path;
+        var baseUrl = (_config["PublicBaseUrl"] ?? "https://api.sabmero.com").TrimEnd('/');
+        return baseUrl + (path.StartsWith('/') ? path : "/" + path);
     }
 
     private async Task ClearDeadTokenAsync(string token)

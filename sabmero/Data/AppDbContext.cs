@@ -29,6 +29,7 @@ public class AppDbContext : DbContext
     public DbSet<Review> Reviews { get; set; }
     public DbSet<AppSetting> AppSettings { get; set; }
     public DbSet<VendorPayment> VendorPayments { get; set; }
+    public DbSet<TechnicianPayment> TechnicianPayments { get; set; }
     public DbSet<RepairService> RepairServices { get; set; }
     public DbSet<ServiceCategory> ServiceCategories { get; set; }
     public DbSet<ServicePackage> ServicePackages { get; set; }
@@ -239,6 +240,25 @@ public DbSet<ServicePackageItem> ServicePackageItems { get; set; }
             e.Property(vp => vp.Note).HasMaxLength(300);
             e.Property(vp => vp.ScreenshotPath).HasMaxLength(400);
             e.Property(vp => vp.Status).HasMaxLength(15).HasDefaultValue("Paid");
+        });
+
+        // ── TECHNICIAN PAYMENTS (admin → technician) ───────────────────────
+        modelBuilder.Entity<TechnicianPayment>(e =>
+        {
+            e.HasKey(tp => tp.Id);
+
+            // One User (technician) → Many TechnicianPayments
+            e.HasOne(tp => tp.Technician)
+             .WithMany()
+             .HasForeignKey(tp => tp.TechnicianId)
+             .OnDelete(DeleteBehavior.Cascade);
+
+            e.Property(tp => tp.Amount).HasPrecision(18, 2);
+            e.Property(tp => tp.Note).HasMaxLength(300);
+            e.Property(tp => tp.ScreenshotPath).HasMaxLength(400);
+            e.Property(tp => tp.Status).HasMaxLength(15).HasDefaultValue("Paid");
+            e.Property(tp => tp.Method).HasMaxLength(10).HasDefaultValue("Cash");
+            e.Property(tp => tp.AmountInWords).HasMaxLength(200);
         });
 
         // ── VENDOR payment QR column size ──────────────────────────────────

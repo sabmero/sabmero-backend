@@ -71,6 +71,9 @@ public class BookingDto
     public string? PaymentScreenshotPath { get; set; }
     public string PaymentStatus { get; set; } = string.Empty;
     public decimal? ServiceCharge { get; set; }
+    public string? CollectionMethod { get; set; }
+    public string? CollectionAmountInWords { get; set; }
+    public string? CollectionScreenshotPath { get; set; }
     public DateTime CreatedAt { get; set; }
 
     // Catalog linkage (null for older bookings)
@@ -98,4 +101,15 @@ public class UpdateBookingStatusDto
 
     // Set when the technician completes the job and enters the final charge.
     public decimal? ServiceCharge { get; set; }
+
+    // How the money was collected: "Cash" (write the amount in words) or
+    // "Online" (attach the payment screenshot). Both optional for old clients.
+    [MaxLength(10)]
+    public string? CollectionMethod { get; set; }
+
+    [MaxLength(200)]
+    public string? AmountInWords { get; set; }
+
+    [MaxLength(400)]
+    public string? CollectionScreenshotPath { get; set; }
 }

@@ -87,6 +87,8 @@ public class ServiceBookingService : IServiceBookingService
 
         _db.ServiceBookings.Add(booking);
         await _db.SaveChangesAsync();
+        StatusEventLog.Add(_db, "Booking", booking.Id, "Placed", "Booking received", null, "Customer");
+        await _db.SaveChangesAsync();
         _logger.LogInformation("Service booking {Id} created by user {UserId}", booking.Id, userId);
 
         await NotifyBookingCreatedAsync(booking);
@@ -167,6 +169,7 @@ public class ServiceBookingService : IServiceBookingService
         if (booking.Status == "Pending")
             booking.Status = "Approved";
 
+        StatusEventLog.Add(_db, "Booking", booking.Id, "Assigned", $"Assigned to technician {tech.FullName}", tech.FullName, "Technician");
         await _db.SaveChangesAsync();
 
         try
@@ -248,6 +251,10 @@ public class ServiceBookingService : IServiceBookingService
             }
         }
 
+        var actor = await _db.Users.AsNoTracking().Where(u => u.Id == userId).Select(u => u.FullName).FirstOrDefaultAsync();
+        var collectedNote = (dto.Status == "Completed" && collectionMethod != null)
+            ? $"Payment collected via {collectionMethod}" : null;
+        StatusEventLog.Add(_db, "Booking", booking.Id, dto.Status, collectedNote, actor, role);
         await _db.SaveChangesAsync();
 
         // Notify the customer about the status change (fire-and-forget safe).

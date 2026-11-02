@@ -137,6 +137,8 @@ public class OrderService : IOrderService
 
         _db.Orders.Add(order);
         await _db.SaveChangesAsync();
+        StatusEventLog.Add(_db, "Order", order.Id, "Placed", "Order placed", null, "Customer");
+        await _db.SaveChangesAsync();
 
         // ── Optional installation booking (lands in the Repair section) ──
         // Vendors sell the product; the on-site installation is our technical
@@ -311,6 +313,17 @@ public class OrderService : IOrderService
         if (status == "Delivered")
             order.PaymentStatus = "Paid";   // COD collected on delivery
 
+        var actorName = await _db.Users.AsNoTracking().Where(u => u.Id == actorUserId).Select(u => u.FullName).FirstOrDefaultAsync();
+        var evNote = status switch
+        {
+            "Processing" => "Order confirmed",
+            "Dispatched" => "Out for delivery",
+            "Delivered" => string.IsNullOrWhiteSpace(order.CollectionMethod) ? "Delivered" : $"Delivered, payment collected via {order.CollectionMethod}",
+            "Cancelled" => "Order cancelled",
+            _ => null
+        };
+        StatusEventLog.Add(_db, "Order", order.Id, status, evNote, actorName, actorRole);
+
         await _db.SaveChangesAsync();
 
         // Notify the customer about the order status change.
@@ -357,6 +370,7 @@ public class OrderService : IOrderService
         if (order.Status == "Pending" || order.Status == "Processing")
             order.Status = "Dispatched";
 
+        StatusEventLog.Add(_db, "Order", order.Id, "Dispatched", $"Rider {rider.FullName} will deliver your order", rider.FullName, "Rider");
         await _db.SaveChangesAsync();
 
         // Notify the rider: what they are delivering (names + the first product's
@@ -408,6 +422,7 @@ public class OrderService : IOrderService
         }
 
         order.Status = "Cancelled";
+        StatusEventLog.Add(_db, "Order", order.Id, "Cancelled", "Cancelled by the customer", null, "Customer");
         await _db.SaveChangesAsync();
 
         // Let the vendor(s) and admin(s) know the customer cancelled.

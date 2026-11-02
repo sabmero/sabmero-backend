@@ -90,7 +90,7 @@ public class OrdersController : ControllerBase
     public async Task<IActionResult> UpdateStatus(int id, [FromBody] UpdateOrderStatusDto dto)
     {
         if (!ModelState.IsValid) return BadRequest(ModelState);
-        var (success, message) = await _service.UpdateStatusAsync(id, dto.Status, User.GetUserId(), User.GetRole());
+        var (success, message) = await _service.UpdateStatusAsync(id, dto.Status, User.GetUserId(), User.GetRole(), dto);
         return success
             ? Ok(new { success = true, message })
             : BadRequest(new { success = false, message });

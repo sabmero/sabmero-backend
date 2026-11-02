@@ -112,6 +112,17 @@ public class UpdateOrderStatusDto
     [Required]
     // "Pending" | "Processing" | "Dispatched" | "Delivered" | "Cancelled"
     public string Status { get; set; } = string.Empty;
+
+    // Rider marking a cash-on-delivery order as Delivered: how the money was
+    // collected. "Cash" (write the amount in words) or "Online" (screenshot).
+    [MaxLength(10)]
+    public string? CollectionMethod { get; set; }
+
+    [MaxLength(200)]
+    public string? AmountInWords { get; set; }
+
+    [MaxLength(400)]
+    public string? CollectionScreenshotPath { get; set; }
 }
 
 // ── Admin SENDS this to assign a delivery rider ──

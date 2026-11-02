@@ -20,6 +20,13 @@ public class Order
     public string? PromoCode { get; set; }
     public decimal Discount { get; set; } = 0;
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public DateTime? DeliveredAt { get; set; }              // when the rider marked it delivered
+
+    // Cash-on-delivery money the rider collected: "Cash" (amount in words) or
+    // "Online" (screenshot of the customer's payment).
+    public string? CollectionMethod { get; set; }
+    public string? CollectionAmountInWords { get; set; }
+    public string? CollectionScreenshotPath { get; set; }
 
     // Navigation
     public User User { get; set; } = null!;

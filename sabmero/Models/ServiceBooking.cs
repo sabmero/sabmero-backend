@@ -28,6 +28,11 @@ public class ServiceBooking
     public string? PaymentScreenshotPath { get; set; }       // QR payment proof — required when PaymentMethod == "QR"
     public string PaymentStatus { get; set; } = "Pending";   // "Pending" | "Submitted" | "Verified" | "Rejected"
     public decimal? ServiceCharge { get; set; }
+
+    // How the technician collected the final charge when completing the job.
+    public string? CollectionMethod { get; set; }            // "Cash" | "Online"
+    public string? CollectionAmountInWords { get; set; }     // e.g. "Five hundred rupees only" / "पाँच सय रुपैयाँ"
+    public string? CollectionScreenshotPath { get; set; }    // proof when CollectionMethod == "Online"
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
     // ── Installation linkage ─────────────────────────────────────────────────

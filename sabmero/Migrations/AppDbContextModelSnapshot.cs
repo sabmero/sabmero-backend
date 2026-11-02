@@ -167,11 +167,23 @@ namespace sabmero.Migrations
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
+                    b.Property<string>("CollectionAmountInWords")
+                        .HasColumnType("text");
+
+                    b.Property<string>("CollectionMethod")
+                        .HasColumnType("text");
+
+                    b.Property<string>("CollectionScreenshotPath")
+                        .HasColumnType("text");
+
                     b.Property<decimal>("CommissionAmount")
                         .HasPrecision(18, 2)
                         .HasColumnType("numeric(18,2)");
 
                     b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("DeliveredAt")
                         .HasColumnType("timestamp with time zone");
 
                     b.Property<string>("DeliveryAddress")
@@ -583,6 +595,15 @@ namespace sabmero.Migrations
                     b.Property<DateTime?>("CheckInTime")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<string>("CollectionAmountInWords")
+                        .HasColumnType("text");
+
+                    b.Property<string>("CollectionMethod")
+                        .HasColumnType("text");
+
+                    b.Property<string>("CollectionScreenshotPath")
+                        .HasColumnType("text");
+
                     b.Property<DateTime?>("CompletedTime")
                         .HasColumnType("timestamp with time zone");
 
@@ -961,6 +982,63 @@ namespace sabmero.Migrations
                         });
                 });
 
+            modelBuilder.Entity("sabmero.Models.TechnicianPayment", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime?>("AcknowledgedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("AmountInWords")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<decimal>("Amount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Method")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)")
+                        .HasDefaultValue("Cash");
+
+                    b.Property<string>("Note")
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)");
+
+                    b.Property<int>("PaidByUserId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("ScreenshotPath")
+                        .HasMaxLength(400)
+                        .HasColumnType("character varying(400)");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(15)
+                        .HasColumnType("character varying(15)")
+                        .HasDefaultValue("Paid");
+
+                    b.Property<int>("TechnicianId")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TechnicianId");
+
+                    b.ToTable("TechnicianPayments");
+                });
+
             modelBuilder.Entity("sabmero.Models.VendorPayment", b =>
                 {
                     b.Property<int>("Id")
@@ -1189,6 +1267,17 @@ namespace sabmero.Migrations
                         .IsRequired();
 
                     b.Navigation("User");
+                });
+
+            modelBuilder.Entity("sabmero.Models.TechnicianPayment", b =>
+                {
+                    b.HasOne("sabmero.Models.User", "Technician")
+                        .WithMany()
+                        .HasForeignKey("TechnicianId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Technician");
                 });
 
             modelBuilder.Entity("sabmero.Models.VendorPayment", b =>

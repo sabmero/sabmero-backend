@@ -58,6 +58,27 @@ public class TechnicianPayoutSummaryDto
     public decimal DeliveryFees { get; set; }                // rider: delivery fees on delivered orders
     public decimal TotalPaid { get; set; }                   // sum already paid to the technician
     public DateTime? LastPaidAt { get; set; }
+
+    // ── hand-over to SabMero + payout QR ──
+    public string? PaymentQrPath { get; set; }               // the person's own QR (set by admin)
+    public decimal CashCollected { get; set; }               // cash taken from customers
+    public decimal Remitted { get; set; }                    // handed over & verified
+    public decimal CashHeld { get; set; }                    // cash still to hand over
+    public int PendingRemittances { get; set; }              // hand-overs waiting for admin verification
+
+    // ── commission ──
+    public decimal CommissionPercent { get; set; }           // % of service charge (technician) / delivery fee (rider)
+    public decimal Earned { get; set; }                      // commission earned on all completed work
+    public decimal Payable { get; set; }                     // earned − already paid (never below 0)
+}
+
+// Admin-set commission percentages.
+public class CommissionSettingsDto
+{
+    [System.ComponentModel.DataAnnotations.Range(0, 100)]
+    public decimal RiderPercent { get; set; } = 80;
+    [System.ComponentModel.DataAnnotations.Range(0, 100)]
+    public decimal TechnicianPercent { get; set; } = 70;
 }
 
 // ── What the technician sees on their payments page ──
@@ -78,6 +99,16 @@ public class MyTechnicianPayoutDto
     public decimal DeliveryFees { get; set; }   // riders: delivery charges of delivered orders
     public int PendingConfirmations { get; set; } // payments received but not yet confirmed
     public List<CollectionRowDto> RecentJobs { get; set; } = new();
+
+    // ── hand-over to SabMero ──
+    public decimal CashHeld { get; set; }                // cash collected − verified hand-overs (never below 0)
+    public decimal Remitted { get; set; }                // verified hand-overs
+    public decimal RemittedPending { get; set; }         // sent, waiting for admin to verify
+    public string? MyQrPath { get; set; }
+    public decimal CommissionPercent { get; set; }
+    public decimal Earned { get; set; }          // commission earned on all completed work
+    public decimal Payable { get; set; }         // earned − already received
+    public List<StaffRemittanceDto> Remittances { get; set; } = new();
 }
 
 // ── Collections report: money technicians collected from customers ──

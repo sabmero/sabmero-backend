@@ -35,6 +35,9 @@ public class User
     // Relative path of the profile picture on the server, e.g. "/uploads/profile/abc.jpg".
     public string? ProfilePicturePath { get; set; }
 
+    // Technician / rider: their payment QR (set by the admin) so SabMero can pay them.
+    public string? PaymentQrPath { get; set; }
+
     // Latest FCM device token for push notifications (FCM HTTP v1).
     public string? FcmToken { get; set; }
 

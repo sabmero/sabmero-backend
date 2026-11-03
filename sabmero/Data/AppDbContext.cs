@@ -31,6 +31,7 @@ public class AppDbContext : DbContext
     public DbSet<VendorPayment> VendorPayments { get; set; }
     public DbSet<TechnicianPayment> TechnicianPayments { get; set; }
     public DbSet<StatusEvent> StatusEvents { get; set; }
+    public DbSet<StaffRemittance> StaffRemittances { get; set; }
     public DbSet<RepairService> RepairServices { get; set; }
     public DbSet<ServiceCategory> ServiceCategories { get; set; }
     public DbSet<ServicePackage> ServicePackages { get; set; }
@@ -241,6 +242,21 @@ public DbSet<ServicePackageItem> ServicePackageItems { get; set; }
             e.Property(vp => vp.Note).HasMaxLength(300);
             e.Property(vp => vp.ScreenshotPath).HasMaxLength(400);
             e.Property(vp => vp.Status).HasMaxLength(15).HasDefaultValue("Paid");
+        });
+
+        // ── STAFF REMITTANCES (technician / rider → SabMero) ───────────────
+        modelBuilder.Entity<StaffRemittance>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.HasOne(x => x.Staff).WithMany().HasForeignKey(x => x.StaffId).OnDelete(DeleteBehavior.Cascade);
+            e.Property(x => x.Amount).HasPrecision(18, 2);
+            e.Property(x => x.Method).HasMaxLength(10).HasDefaultValue("Cash");
+            e.Property(x => x.AmountInWords).HasMaxLength(200);
+            e.Property(x => x.ScreenshotPath).HasMaxLength(400);
+            e.Property(x => x.Note).HasMaxLength(300);
+            e.Property(x => x.Status).HasMaxLength(10).HasDefaultValue("Pending");
+            e.Property(x => x.RejectReason).HasMaxLength(200);
+            e.HasIndex(x => new { x.StaffId, x.Status });
         });
 
         // ── STATUS EVENTS (activity timeline of bookings / orders) ─────────

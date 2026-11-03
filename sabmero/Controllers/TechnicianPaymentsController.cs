@@ -43,6 +43,20 @@ public class TechnicianPaymentsController : ControllerBase
     }
 
     [Authorize(Roles = "Admin")]
+    [HttpGet("commission")]
+    public async Task<IActionResult> GetCommission()
+        => Ok(new { success = true, data = await _service.GetCommissionAsync() });
+
+    [Authorize(Roles = "Admin")]
+    [HttpPut("commission")]
+    public async Task<IActionResult> SetCommission([FromBody] CommissionSettingsDto dto)
+    {
+        if (!ModelState.IsValid) return BadRequest(ModelState);
+        await _service.SetCommissionAsync(dto);
+        return Ok(new { success = true, message = "Commission saved." });
+    }
+
+    [Authorize(Roles = "Admin")]
     [HttpGet("technicians")]
     public async Task<IActionResult> Technicians()
         => Ok(new { success = true, data = await _service.GetTechniciansForPayoutAsync() });

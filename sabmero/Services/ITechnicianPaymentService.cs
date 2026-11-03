@@ -14,4 +14,6 @@ public interface ITechnicianPaymentService
     Task<(bool Success, string Message, TechnicianPaymentDto? Data)> RecordAsync(int adminUserId, RecordTechnicianPaymentDto dto);
     Task<List<TechnicianPaymentDto>> GetHistoryAsync(int? technicianId);
     Task<CollectionsReportDto> GetCollectionsAsync(string? date, int? technicianId, int tzOffsetMinutes);
+    Task<CommissionSettingsDto> GetCommissionAsync();
+    Task SetCommissionAsync(CommissionSettingsDto dto);
 }

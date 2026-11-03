@@ -23,6 +23,34 @@ public class TechnicianPaymentService : ITechnicianPaymentService
         _push = push;
     }
 
+    // ── Commission settings (AppSettings keys) ───────────────────────────────
+    private const string RiderPctKey = "RiderCommissionPercent";
+    private const string TechPctKey = "TechnicianCommissionPercent";
+
+    public async Task<CommissionSettingsDto> GetCommissionAsync()
+    {
+        var vals = await _db.AppSettings.AsNoTracking()
+            .Where(s => s.Key == RiderPctKey || s.Key == TechPctKey).ToListAsync();
+        decimal Get(string k, decimal def) =>
+            decimal.TryParse(vals.FirstOrDefault(s => s.Key == k)?.Value,
+                System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var v) ? v : def;
+        return new CommissionSettingsDto { RiderPercent = Get(RiderPctKey, 80m), TechnicianPercent = Get(TechPctKey, 70m) };
+    }
+
+    public async Task SetCommissionAsync(CommissionSettingsDto dto)
+    {
+        async Task Put(string key, decimal v)
+        {
+            var row = await _db.AppSettings.FirstOrDefaultAsync(s => s.Key == key);
+            var text = Math.Clamp(v, 0m, 100m).ToString(System.Globalization.CultureInfo.InvariantCulture);
+            if (row == null) _db.AppSettings.Add(new AppSetting { Key = key, Value = text, UpdatedAt = DateTime.UtcNow });
+            else { row.Value = text; row.UpdatedAt = DateTime.UtcNow; }
+        }
+        await Put(RiderPctKey, dto.RiderPercent);
+        await Put(TechPctKey, dto.TechnicianPercent);
+        await _db.SaveChangesAsync();
+    }
+
     // ── TECHNICIAN / RIDER: my payments ──────────────────────────────────────
     public async Task<MyTechnicianPayoutDto> GetMyPayoutsAsync(int technicianId)
     {
@@ -43,8 +71,37 @@ public class TechnicianPaymentService : ITechnicianPaymentService
         var summary = report.Summary.FirstOrDefault(s => s.TechnicianId == technicianId);
         var role = await _db.Users.AsNoTracking().Where(u => u.Id == technicianId).Select(u => u.Role).FirstOrDefaultAsync() ?? "Technician";
 
+        var myRemits = await _db.StaffRemittances.AsNoTracking().Include(r => r.Staff)
+            .Where(r => r.StaffId == technicianId)
+            .OrderByDescending(r => r.CreatedAt).Take(30).ToListAsync();
+        var verified = await _db.StaffRemittances.AsNoTracking()
+            .Where(r => r.StaffId == technicianId && r.Status == "Verified").SumAsync(r => (decimal?)r.Amount) ?? 0m;
+        var pendingAmt = await _db.StaffRemittances.AsNoTracking()
+            .Where(r => r.StaffId == technicianId && r.Status == "Pending").SumAsync(r => (decimal?)r.Amount) ?? 0m;
+        var myQr = await _db.Users.AsNoTracking().Where(u => u.Id == technicianId).Select(u => u.PaymentQrPath).FirstOrDefaultAsync();
+        var cashTotal = jobs.Where(j => j.Method == "Cash").Sum(j => j.Amount);
+        var comm = await GetCommissionAsync();
+        var pct = role == "Rider" ? comm.RiderPercent : comm.TechnicianPercent;
+        var basis = role == "Rider"
+            ? (summary?.DeliveryFees ?? 0m)
+            : jobs.Where(j => j.Kind == "Booking").Sum(j => j.Amount);
+        var earned = Math.Round(basis * pct / 100m, 0);
+
         return new MyTechnicianPayoutDto
         {
+            CommissionPercent = pct,
+            Earned = earned,
+            Payable = Math.Max(0m, earned - rows.Sum(p => p.Amount)),
+            CashHeld = Math.Max(0m, cashTotal - verified),
+            Remitted = verified,
+            RemittedPending = pendingAmt,
+            MyQrPath = myQr,
+            Remittances = myRemits.Select(r => new StaffRemittanceDto
+            {
+                Id = r.Id, StaffId = r.StaffId, StaffName = r.Staff?.FullName ?? string.Empty, Role = r.Staff?.Role ?? string.Empty,
+                Amount = r.Amount, Method = r.Method, AmountInWords = r.AmountInWords, ScreenshotPath = r.ScreenshotPath,
+                Note = r.Note, Status = r.Status, RejectReason = r.RejectReason, CreatedAt = r.CreatedAt, VerifiedAt = r.VerifiedAt
+            }).ToList(),
             TotalReceived = rows.Sum(p => p.Amount),
             Payments = rows.Select(Map).ToList(),
             Role = role,
@@ -123,9 +180,22 @@ public class TechnicianPaymentService : ITechnicianPaymentService
             .Select(g => new { Id = g.Key, Total = g.Sum(x => x.Amount), Last = g.Max(x => x.CreatedAt) })
             .ToListAsync();
 
+        var comm = await GetCommissionAsync();
+        var cashRows = (await GetCollectionsAsync(null, null, 345)).Rows
+            .Where(r => r.Method == "Cash")
+            .GroupBy(r => r.TechnicianId)
+            .ToDictionary(g => g.Key, g => g.Sum(x => x.Amount));
+        var remits = await _db.StaffRemittances.AsNoTracking()
+            .GroupBy(r => new { r.StaffId, r.Status })
+            .Select(g => new { g.Key.StaffId, g.Key.Status, Total = g.Sum(x => x.Amount), Count = g.Count() })
+            .ToListAsync();
+
         return staff.Select(u =>
         {
             var pd = paid.FirstOrDefault(x => x.Id == u.Id);
+            var cash = cashRows.TryGetValue(u.Id, out var cv) ? cv : 0m;
+            var ver = remits.Where(x => x.StaffId == u.Id && x.Status == "Verified").Sum(x => x.Total);
+            var pend = remits.Where(x => x.StaffId == u.Id && x.Status == "Pending").Sum(x => x.Count);
             var dto = new TechnicianPayoutSummaryDto
             {
                 TechnicianId = u.Id,
@@ -133,8 +203,17 @@ public class TechnicianPaymentService : ITechnicianPaymentService
                 Name = u.FullName,
                 Phone = u.Phone ?? string.Empty,
                 TotalPaid = pd?.Total ?? 0m,
-                LastPaidAt = pd?.Last
+                LastPaidAt = pd?.Last,
+                PaymentQrPath = u.PaymentQrPath,
+                CashCollected = cash,
+                Remitted = ver,
+                CashHeld = Math.Max(0m, cash - ver),
+                PendingRemittances = pend
             };
+            dto.CommissionPercent = u.Role == "Rider" ? comm.RiderPercent : comm.TechnicianPercent;
+            dto.Earned = Math.Round((u.Role == "Rider" ? (deliveries.FirstOrDefault(x => x.Id == u.Id)?.Fees ?? 0m)
+                                                       : (jobs.FirstOrDefault(x => x.Id == u.Id)?.Charge ?? 0m)) * dto.CommissionPercent / 100m, 0);
+            dto.Payable = Math.Max(0m, dto.Earned - dto.TotalPaid);
             if (u.Role == "Rider")
             {
                 var d = deliveries.FirstOrDefault(x => x.Id == u.Id);

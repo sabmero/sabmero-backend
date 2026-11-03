@@ -33,10 +33,31 @@ public class TechnicianPaymentService : ITechnicianPaymentService
             .OrderByDescending(p => p.CreatedAt)
             .ToListAsync();
 
+        // Jobs / deliveries + money collected, from the same data the admin report uses.
+        const int nepalOffset = 345;
+        var report = await GetCollectionsAsync(null, technicianId, nepalOffset);
+        var nowLocal = DateTime.UtcNow.AddMinutes(nepalOffset);
+        var todayStartUtc = DateTime.SpecifyKind(nowLocal.Date.AddMinutes(-nepalOffset), DateTimeKind.Utc);
+        var monthStartUtc = DateTime.SpecifyKind(new DateTime(nowLocal.Year, nowLocal.Month, 1).AddMinutes(-nepalOffset), DateTimeKind.Utc);
+        var jobs = report.Rows;
+        var summary = report.Summary.FirstOrDefault(s => s.TechnicianId == technicianId);
+        var role = await _db.Users.AsNoTracking().Where(u => u.Id == technicianId).Select(u => u.Role).FirstOrDefaultAsync() ?? "Technician";
+
         return new MyTechnicianPayoutDto
         {
             TotalReceived = rows.Sum(p => p.Amount),
-            Payments = rows.Select(Map).ToList()
+            Payments = rows.Select(Map).ToList(),
+            Role = role,
+            Jobs = jobs.Count,
+            JobsToday = jobs.Count(j => j.CompletedAt >= todayStartUtc),
+            JobsThisMonth = jobs.Count(j => j.CompletedAt >= monthStartUtc),
+            CollectedCash = jobs.Where(j => j.Method == "Cash").Sum(j => j.Amount),
+            CollectedOnline = jobs.Where(j => j.Method == "Online").Sum(j => j.Amount),
+            CollectedTotal = jobs.Sum(j => j.Amount),
+            CollectedToday = jobs.Where(j => j.CompletedAt >= todayStartUtc).Sum(j => j.Amount),
+            DeliveryFees = summary?.DeliveryFees ?? 0m,
+            PendingConfirmations = rows.Count(p => p.Status == "Paid"),
+            RecentJobs = jobs.Take(30).ToList()
         };
     }
 

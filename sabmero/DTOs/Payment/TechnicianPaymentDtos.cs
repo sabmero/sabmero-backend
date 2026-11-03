@@ -65,6 +65,19 @@ public class MyTechnicianPayoutDto
 {
     public decimal TotalReceived { get; set; }
     public List<TechnicianPaymentDto> Payments { get; set; } = new();
+
+    // ── "My summary" for the technician / rider app ──
+    public string Role { get; set; } = "Technician";
+    public int Jobs { get; set; }               // completed jobs / delivered orders
+    public int JobsToday { get; set; }
+    public int JobsThisMonth { get; set; }
+    public decimal CollectedCash { get; set; }  // money collected from customers
+    public decimal CollectedOnline { get; set; }
+    public decimal CollectedTotal { get; set; }
+    public decimal CollectedToday { get; set; }
+    public decimal DeliveryFees { get; set; }   // riders: delivery charges of delivered orders
+    public int PendingConfirmations { get; set; } // payments received but not yet confirmed
+    public List<CollectionRowDto> RecentJobs { get; set; } = new();
 }
 
 // ── Collections report: money technicians collected from customers ──

@@ -814,6 +814,9 @@ namespace sabmero.Migrations
                         .HasMaxLength(20)
                         .HasColumnType("character varying(20)");
 
+                    b.Property<string>("PaymentQrPath")
+                        .HasColumnType("text");
+
                     b.Property<string>("ProfilePicturePath")
                         .HasColumnType("text");
 
@@ -980,6 +983,67 @@ namespace sabmero.Migrations
                             IsApproved = true,
                             UserId = 6
                         });
+                });
+
+            modelBuilder.Entity("sabmero.Models.StaffRemittance", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<decimal>("Amount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)");
+
+                    b.Property<string>("AmountInWords")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Method")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)")
+                        .HasDefaultValue("Cash");
+
+                    b.Property<string>("Note")
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)");
+
+                    b.Property<string>("RejectReason")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("ScreenshotPath")
+                        .HasMaxLength(400)
+                        .HasColumnType("character varying(400)");
+
+                    b.Property<int>("StaffId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)")
+                        .HasDefaultValue("Pending");
+
+                    b.Property<int?>("VerifiedByUserId")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime?>("VerifiedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("StaffId", "Status");
+
+                    b.ToTable("StaffRemittances");
                 });
 
             modelBuilder.Entity("sabmero.Models.StatusEvent", b =>
@@ -1374,6 +1438,17 @@ namespace sabmero.Migrations
             modelBuilder.Entity("sabmero.Models.ServiceBooking", b =>
                 {
                     b.Navigation("Review");
+                });
+
+            modelBuilder.Entity("sabmero.Models.StaffRemittance", b =>
+                {
+                    b.HasOne("sabmero.Models.User", "Staff")
+                        .WithMany()
+                        .HasForeignKey("StaffId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Staff");
                 });
 
             modelBuilder.Entity("sabmero.Models.User", b =>

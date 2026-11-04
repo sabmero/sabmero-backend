@@ -180,6 +180,20 @@ public class StaffRemittancesController : ControllerBase
         return Ok(new { success = true, message = "Rejected.", data = Map(r) });
     }
 
+    // Staff sets / changes their OWN payout QR from the app (admin can also override it).
+    [Authorize(Roles = "Technician,Rider")]
+    [HttpPut("my-qr")]
+    public async Task<IActionResult> SetMyQr([FromBody] SetStaffQrDto dto)
+    {
+        if (string.IsNullOrWhiteSpace(dto.QrImagePath))
+            return BadRequest(new { success = false, message = "Please choose your QR image." });
+        var u = await _db.Users.FirstOrDefaultAsync(x => x.Id == User.GetUserId());
+        if (u == null) return Unauthorized();
+        u.PaymentQrPath = dto.QrImagePath.Trim();
+        await _db.SaveChangesAsync();
+        return Ok(new { success = true, message = "Your QR is saved.", data = new { qrPath = u.PaymentQrPath } });
+    }
+
     // Admin sets (or removes) a staff member's own payout QR.
     [Authorize(Roles = "Admin")]
     [HttpPut("staff/{userId:int}/qr")]

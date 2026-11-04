@@ -42,6 +42,23 @@ public class TechnicianPaymentsController : ControllerBase
             : BadRequest(new { success = false, message });
     }
 
+    // Admin sets / corrects the amount the customer must pay for a booking
+    // (the technician then sees "Collect Rs X").
+    [Authorize(Roles = "Admin")]
+    [HttpPut("bookings/{id:int}/amount")]
+    public async Task<IActionResult> SetBookingAmount(int id, [FromBody] SetBookingAmountDto dto,
+        [FromServices] sabmero.Data.AppDbContext db)
+    {
+        if (dto.Amount < 0) return BadRequest(new { success = false, message = "Invalid amount." });
+        var b = await db.ServiceBookings.FindAsync(id);
+        if (b == null) return NotFound(new { success = false, message = "Booking not found." });
+        if (b.Status == "Completed")
+            return BadRequest(new { success = false, message = "Completed bookings cannot be changed." });
+        b.ServiceCharge = dto.Amount;
+        await db.SaveChangesAsync();
+        return Ok(new { success = true, message = "Amount saved." });
+    }
+
     [Authorize(Roles = "Admin")]
     [HttpGet("commission")]
     public async Task<IActionResult> GetCommission()

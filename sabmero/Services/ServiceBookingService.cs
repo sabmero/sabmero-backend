@@ -63,8 +63,20 @@ public class ServiceBookingService : IServiceBookingService
                 .Select(p => (int?)p.CategoryId)
                 .FirstOrDefaultAsync();
 
+        // The amount the customer has to pay = the package / service rate.
+        // The technician sees it as "Collect Rs X"; the admin can change it.
+        decimal? agreedCharge = null;
+        if (dto.ServicePackageId.HasValue)
+            agreedCharge = await _db.ServicePackages.AsNoTracking()
+                .Where(p => p.Id == dto.ServicePackageId.Value).Select(p => (decimal?)p.Price).FirstOrDefaultAsync();
+        else if (dto.ServiceId.HasValue)
+            agreedCharge = await _db.RepairServices.AsNoTracking()
+                .Where(s => s.Id == dto.ServiceId.Value).Select(s => (decimal?)s.Charge).FirstOrDefaultAsync();
+        if (agreedCharge is <= 0) agreedCharge = null;
+
         var booking = new ServiceBooking
         {
+            ServiceCharge = agreedCharge,
             UserId = userId,
             ServiceType = dto.ServiceType,
             BookingDate = DateTime.SpecifyKind(dto.BookingDate, DateTimeKind.Utc),

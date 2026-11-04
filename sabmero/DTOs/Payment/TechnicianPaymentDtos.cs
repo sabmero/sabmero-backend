@@ -72,6 +72,11 @@ public class TechnicianPayoutSummaryDto
     public decimal Payable { get; set; }                     // earned − already paid (never below 0)
 }
 
+public class SetBookingAmountDto
+{
+    public decimal Amount { get; set; }
+}
+
 // Admin-set commission percentages.
 public class CommissionSettingsDto
 {
